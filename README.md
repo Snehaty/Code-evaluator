@@ -49,34 +49,7 @@ Nothing reads a root `.env` — see the comment in `.env.example` for why.
   only), `packages/db` (Drizzle schema), `packages/orchestrator` (stub), and
   `packages/design-system-ledger` are its workspace packages.
 
-## Tech stack
 
-| Concern | Decision |
-|---|---|
-| Framework | Next.js (TypeScript) — one app: UI, CRUD API, and orchestrator entrypoint |
-| Framework version | Next.js 15.5.22, pinned exact — next-auth@5 is validated against Next 15 |
-| Database | Postgres (Supabase-hosted) via Drizzle ORM over node-postgres |
-| Orchestrator | LangGraph (TypeScript); LLM provider left configurable, not hard-coded |
-| Developer auth & repo access | GitHub OAuth, requesting `repo` scope — one token serves both developer identity and all repo reads. No GitHub App, no installation, no service-level credential anywhere in this design. |
-| Stakeholder auth | Email magic link — no shared password auth with developers |
-| Token custody | Held only in the developer's session, never persisted to a table — a deliberate choice, not a limitation; see below |
-| Deployment | Single deployable, host deliberately undecided — built host-agnostic (standalone Node output). Serverless (Vercel-class) and a long-lived Node host (Railway/Render/Fly-class) are both live options; see below |
-
-Resolved constraint from an earlier design pass: since repo reads are authenticated as
-the requesting developer's own live token rather than a stored service credential,
-evaluation runs **synchronously**, inside the same request that submits a claim — no
-background job, no queue, no persisted third-party credential to leak in a DB breach.
-That reasoning is about token custody, not about the runtime, so it holds on any host.
-
-What the host *does* decide is how much Evaluator work fits into one submission. On a
-serverless platform, total work is capped by that request's execution-time ceiling —
-low hundreds of seconds, platform- and plan-dependent. On a long-lived Node host there
-is no such ceiling. A batched LangGraph run doing multi-turn file reads across several
-commits is plausibly minutes-scale, so the difference is not theoretical — but it is a
-*deployment-target* choice, not a framework one. The app is built not to care: the
-orchestrator sits behind a clean entrypoint and the build emits a standalone Node
-server, so moving between the two is a host swap rather than a rewrite. The choice gets
-made once a real Evaluator run has been measured against a real repo.
 
 ## System components
 
@@ -100,34 +73,7 @@ flowchart LR
 | LangGraph Evaluator | Black box — given a requirement version + claimed commits, produces a verdict |
 | Transparency Log | Black box — given event payloads, produces tamper-evident, independently-checkable records |
 
-## Domain flow
 
-1. Stakeholder signs up, creates a project, becomes its first stakeholder member.
-2. Stakeholder defines requirements as a versioned checklist. → `docs/plans/01`
-3. Stakeholder invites developers by GitHub handle; a developer's GitHub OAuth login
-   activates matching pending invites automatically. → `docs/plans/01`
-4. A developer attaches one or more GitHub repos to the project (picked from repos their
-   own GitHub account can see — no separate installation/consent step). → `docs/plans/02`
-5. A developer selects a requirement (pinned to its current version) and one or more
-   (repo, commit) pairs, and submits a claim. → *not yet designed*
-6. The claim invokes the Evaluator **synchronously, within that same request**, reading
-   repo content using the submitting developer's own live OAuth token.
-7. The Evaluator returns a verdict before the request completes; status is written
-   directly to `verified` or `eval_failed` — there is no intermediate pending state, and
-   **no human approval step exists anywhere in this design.**
-8. *(Future)* Every event above is appended to the Transparency Log; anyone can
-   independently verify a report hasn't been altered since it was recorded.
-
-## Feature status
-
-| Feature | Status |
-|---|---|
-| Requirement management (projects, RBAC, checklist + versioning) | Designed — `docs/plans/01-requirement-management.md` |
-| Repo attachment & commit visibility | Designed — `docs/plans/02-repo-attachment.md` |
-| Claim submission & verification invocation | Not yet designed |
-| LangGraph Evaluator | Black-boxed — contract below, internals deferred |
-| Transparency Log | Black-boxed — contract below, backend choice deferred |
-| Application foundation (workspace, scaffold, contracts, schema) | Built — see `docs/architecture.md` |
 
 ## Black-box contracts
 
