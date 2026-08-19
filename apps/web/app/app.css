@@ -1,0 +1,121 @@
+/* apps/web/app/app.css
+ *
+ * App-level layout only. Nothing here restyles a Ledger component — if a
+ * component needs a change it belongs in the design system with a render-check
+ * assertion, not overridden from the app.
+ *
+ * Loaded AFTER ledger.app.css in layout.tsx, which is what lets --narrow win
+ * over .lg-container's max-width (both are single-class selectors).
+ */
+
+/* `.lg-container` is deliberately horizontal-only — max-width plus
+ * padding-inline, no vertical rhythm. The design system's own preview harness
+ * pairs it with vertical padding the same way (previews/preview.css). Without
+ * this, page content sits flush against the top of the viewport. */
+.app-page {
+  padding-block: var(--lg-space-7) var(--lg-space-8);
+}
+
+/* Auth screens are one short column. At the default 1200px an email field
+ * stretches the full width of the window, which reads as a mistake and makes
+ * the input's left and right ends land in different parts of the screen.
+ *
+ * Two classes deliberately: this competes with `.lg-container`'s own
+ * max-width, and relying on stylesheet order to break the tie is fragile —
+ * the bundler decides that, not the import statement. Verified: with a
+ * single-class selector the container's 1200px won. */
+.app-page.app-page--narrow {
+  max-width: 34rem;
+}
+
+/* -----------------------------------------------------------------------------
+   App header
+
+   Layout only. Every visible part is a Ledger component or token — the mark is
+   the sole exception, and it is type and colour rather than a new component.
+   ----------------------------------------------------------------------------- */
+.app-header {
+  border-bottom: 1px solid var(--lg-rule);
+  background: var(--lg-surface);
+}
+
+.app-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lg-space-4);
+  min-height: 3.25rem;
+}
+
+.app-header__mark {
+  font-family: var(--lg-font-mono);
+  font-size: var(--lg-text-200);
+  font-weight: var(--lg-weight-semibold);
+  letter-spacing: var(--lg-tracking-normal);
+  color: var(--lg-text);
+  text-decoration: none;
+}
+
+.app-header__mark:hover {
+  color: var(--lg-text-secondary);
+}
+
+.app-header__viewer {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-3);
+  /* min-width:0 so the truncating label below can actually shrink; a flex item
+     defaults to min-width:auto and refuses to go under its content width. */
+  min-width: 0;
+}
+
+/* The identity, not a heading. It yields the bar's width to the role chip and
+   the sign-out control, both of which are fixed-size and both of which the
+   visitor needs whole. */
+.app-header__label {
+  max-width: 18rem;
+}
+
+/* Below the design system's own small breakpoint the email is the first thing
+   to go: the role chip already says which account kind is signed in, which is
+   the part that changes what every page renders. */
+@media (max-width: 40rem) {
+  .app-header__label {
+    display: none;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   Short-value field
+
+   A GitHub username is at most 39 characters. Left to fill a 1200px container
+   it reads as a mistake for exactly the reason `.app-page--narrow` exists — but
+   these pages are full-width for their tables, so the constraint belongs on the
+   field rather than on the page.
+   ----------------------------------------------------------------------------- */
+.app-field-short {
+  max-width: 24rem;
+}
+
+/* -----------------------------------------------------------------------------
+   Row action
+
+   The requirement row's `actions` slot is filled by this app with a plain
+   link, and `.lg-req-row__meta` is a flex row, so it inherits no hit area of
+   its own — roughly 30x20px. That is the only way into a requirement, and on a
+   phone the row itself is deliberately not tappable (the row is an <li> in a
+   <ul>, so it cannot be wrapped in an anchor).
+
+   Grown only under a coarse pointer, and paid for with a matching negative
+   margin so the link keeps its optical position in the row and the desktop
+   layout is untouched.
+   ----------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .app-row-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding-inline: var(--lg-space-2);
+    margin-inline: calc(-1 * var(--lg-space-2));
+  }
+}
