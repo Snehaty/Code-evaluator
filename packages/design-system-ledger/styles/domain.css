@@ -228,3 +228,259 @@
   color: var(--lg-text);
 }
 
+/* -----------------------------------------------------------------------------
+   EVIDENCE LOCK
+
+   The withheld evidence bundle. Two things have to land at once, and they are
+   easy to conflate:
+
+     1. The bundle's contents are not viewable. It holds real source from a
+        private repo and no disclosure mechanism exists in this phase.
+     2. Its digest is still independently checkable. Verifying that evidence was
+        never altered and disclosing what it SAYS are separate operations, and
+        the first never requires the second.
+
+   So the verify action stays live while the content stays sealed. Removing that
+   button because the bundle is private would collapse the distinction the whole
+   trust model rests on — which is why it is styled as a real secondary button
+   here and not as a disabled-looking hint.
+
+   Set in a well, not a card: this is data the system read, not chrome it wrote.
+   ----------------------------------------------------------------------------- */
+.lg-evidence {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: start;
+  column-gap: var(--lg-space-3);
+  padding: var(--lg-space-4);
+  background: var(--lg-well);
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+}
+
+.lg-evidence__icon {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--lg-rule-strong);
+  border-radius: var(--lg-radius);
+  background: var(--lg-surface);
+  color: var(--lg-text-secondary);
+}
+
+.lg-evidence__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-1);
+}
+
+.lg-evidence__label {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-2);
+  flex-wrap: wrap;
+  font-size: var(--lg-text-300);
+  font-weight: var(--lg-weight-medium);
+}
+
+.lg-evidence__note {
+  font-size: var(--lg-text-100);
+  line-height: var(--lg-text-100-lh);
+  color: var(--lg-text-muted);
+  max-width: 62ch;
+}
+
+.lg-evidence__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-2);
+}
+
+/* -----------------------------------------------------------------------------
+   TRANSPARENCY LOG REFERENCE
+
+   The most dangerous surface in the product to get wrong.
+
+   An inclusion proof shows the RECORD was not quietly altered after the fact.
+   It says nothing whatsoever about whether the Evaluator's judgment was
+   correct. `lg-logref__caveat` is not optional chrome — it is the sentence that
+   keeps this component from borrowing credibility the system does not have, and
+   it is why the check never renders in the satisfied green: reusing the verdict
+   colour here would fuse the two claims in exactly the way the product must not.
+   ----------------------------------------------------------------------------- */
+.lg-logref {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-2);
+  padding: var(--lg-space-3) var(--lg-space-4);
+  background: var(--lg-well);
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+}
+
+.lg-logref__head {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-2);
+  flex-wrap: wrap;
+  font-size: var(--lg-text-200);
+}
+
+.lg-logref__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lg-space-1);
+  font-weight: var(--lg-weight-medium);
+  color: var(--lg-text-secondary);
+}
+
+/* Deliberately NOT the satisfied green. An intact record and a correct
+   judgment are different claims and must not share a colour. */
+.lg-logref[data-state="verified"] .lg-logref__state {
+  color: var(--lg-text);
+}
+
+.lg-logref[data-state="mismatch"] .lg-logref__state {
+  color: var(--lg-danger);
+}
+
+.lg-logref[data-state="unavailable"] .lg-logref__state,
+.lg-logref[data-state="unverified"] .lg-logref__state {
+  color: var(--lg-text-muted);
+}
+
+.lg-logref__caveat {
+  font-size: var(--lg-text-100);
+  line-height: var(--lg-text-100-lh);
+  color: var(--lg-text-muted);
+  max-width: 62ch;
+}
+
+/* -----------------------------------------------------------------------------
+   COMMIT ROW
+
+   A commit list is the densest surface in the product, so it is the canonical
+   place to apply `data-density="compact"`.
+   ----------------------------------------------------------------------------- */
+.lg-commit-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--lg-well);
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+}
+
+.lg-commit-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  column-gap: var(--lg-space-3);
+  min-height: var(--lg-row);
+  padding: 0 var(--lg-space-3);
+  border-bottom: 1px solid var(--lg-rule);
+}
+
+.lg-commit-list > .lg-commit-row:last-child {
+  border-bottom: 0;
+}
+
+.lg-commit-row[data-selected="true"] {
+  background: var(--lg-accent-subtle);
+}
+
+.lg-commit-row__subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--lg-text-base);
+}
+
+.lg-commit-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-3);
+  font-size: var(--lg-text-100);
+  color: var(--lg-text-muted);
+  white-space: nowrap;
+}
+
+/* -----------------------------------------------------------------------------
+   EVALUATION PROGRESS
+
+   Evaluation runs synchronously inside the request that submits the claim, so
+   the developer's own tab is held open for its full duration.
+
+   Two rules, both about honesty:
+
+     1. The bar is INDETERMINATE. There is no honest fraction for an LLM
+        evaluation, and inventing one to look reassuring is the kind of small
+        lie that costs a user their trust in everything else on the page.
+     2. The elapsed clock turns ochre past 70% of the platform's execution
+        ceiling, so the developer is warned BEFORE the request is cut off rather
+        than after. Ochre is this system's attention colour and is not a verdict
+        colour, so an amber clock cannot be read as a result.
+   ----------------------------------------------------------------------------- */
+.lg-eval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-3);
+  padding: var(--lg-space-4);
+  background: var(--lg-surface);
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+}
+
+.lg-eval__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lg-space-3);
+}
+
+.lg-eval__label {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-2);
+  font-size: var(--lg-text-300);
+  font-weight: var(--lg-weight-medium);
+}
+
+.lg-eval__clock {
+  font-family: var(--lg-font-mono);
+  font-size: var(--lg-text-200);
+  color: var(--lg-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-eval__clock[data-near-ceiling="true"] {
+  color: var(--lg-warning);
+  font-weight: var(--lg-weight-medium);
+}
+
+.lg-eval__note {
+  font-size: var(--lg-text-100);
+  line-height: var(--lg-text-100-lh);
+  color: var(--lg-text-muted);
+  max-width: 62ch;
+}
+
+/* -----------------------------------------------------------------------------
+   PINNED CLAIM INPUTS
+
+   A claim pins one requirement version set plus one or more (repo, commit SHA)
+   pairs. The Evaluator reads those exact SHAs, never live HEAD, so the pins are
+   the immutable inputs to the whole record.
+
+   There is deliberately no `.lg-claim` component here. That composition is a
+   `.lg-well` holding a `.lg-micro-label` and a stack of identifiers, which is
+   exactly what the well and the identifier classes already do — adding a
+   third class that only re-declares their padding would be a component whose
+   entire job is to exist. When the claim page is built and turns out to need
+   something the well cannot express, that is the moment to add it.
+   ----------------------------------------------------------------------------- */

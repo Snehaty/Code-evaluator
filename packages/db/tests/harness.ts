@@ -79,7 +79,109 @@ async function dropStaleSchemas(client: pg.Client): Promise<void> {
   }
 }
 
+function migrationSql(schemaName: string): string {
+  const dir = fileURLToPath(new URL("../migrations", import.meta.url));
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((file) => readFileSync(`${dir}/${file}`, "utf8"))
+    .join("\n")
+    /* drizzle-kit always fully qualifies CREATE TYPE as `"public"."..."`, and
+     * Postgres has no CREATE TYPE ... IF NOT EXISTS — so the enums must be
+     * rewritten into this run's schema the way search_path already scopes the
+     * (unqualified) tables. */
+    .replaceAll('"public".', `"${schemaName}".`)
+    /* The breakpoints exist for drizzle's own migrator. Sending the whole file
+     * as ONE simple query executes every statement in a single round trip and
+     * in one implicit transaction, so a partial failure cannot leave a
+     * half-built schema. Safe only because this migration contains nothing that
+     * refuses to run inside a transaction (CREATE INDEX CONCURRENTLY, VACUUM). */
+    .replaceAll("--> statement-breakpoint", "");
+}
 
+async function ensureSchema(): Promise<{ shared: Shared; created: boolean }> {
+  if (shared) return { shared, created: false };
+
+  const url = requireUrl();
+  /* Name is built from a timestamp and Math.random, never from input, so
+   * interpolating it is safe. Postgres has no bind parameter for an identifier,
+   * so there is no parameterised alternative. */
+  const name = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  await withAdmin(url, async (client) => {
+    await dropStaleSchemas(client);
+    await client.query(`CREATE SCHEMA "${name}"`);
+  });
+
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 2,
+    options: `-c search_path="${name}"`,
+  });
+
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query(migrationSql(name));
+
+      const { rows } = await client.query<{ tablename: string }>(
+        `SELECT tablename FROM pg_tables WHERE schemaname = $1`,
+        [name],
+      );
+      const tables = rows.map((r) => `"${name}"."${r.tablename}"`).join(", ");
+
+      const built: Shared = {
+        name,
+        pool,
+        db: drizzle(pool, { schema }),
+        /* One statement, one round trip, whatever the table count. CASCADE
+         * because the tables reference each other; RESTART IDENTITY so nothing
+         * carries over in any future sequence-backed column. */
+        truncateSql: `TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`,
+      };
+      shared = built;
+      return { shared: built, created: true };
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    await pool.end();
+    await withAdmin(url, (client) =>
+      client.query(`DROP SCHEMA IF EXISTS "${name}" CASCADE`),
+    ).catch(() => undefined);
+    throw e;
+  }
+}
+
+/**
+ * Runs a test against this file's private schema, emptied first.
+ *
+ * Isolation is per TEST — every call starts from empty tables — but the schema
+ * itself is built once per file. The previous design created and migrated a
+ * fresh schema for every call, which cost ~32 round trips per test; against a
+ * hosted database that dominated the suite's runtime. It also gave every
+ * connection a distinct `search_path` startup parameter, which Supavisor cannot
+ * pool across, so pool count grew with the test count until the pooler refused
+ * new ones ("max pools count reached"). A stable search_path per file fixes
+ * both at once.
+ *
+ * What this does NOT do is isolate tests from each other *concurrently*. Tests
+ * inside a file run sequentially, so TRUNCATE between them is sufficient. Do not
+ * add `test.concurrent` to a database test file without revisiting this — two
+ * concurrent tests would share a schema and collide on the fixtures' reused
+ * unique emails.
+ */
+export async function withTestSchema<T>(
+  fn: (db: TestDb) => Promise<T>,
+): Promise<T> {
+  const { shared: s, created } = await ensureSchema();
+
+  /* Skipped only on the call that just built the schema — its tables are
+   * already empty and TRUNCATE would be a wasted round trip. */
+  if (!created) await s.pool.query(s.truncateSql);
+
+  return fn(s.db);
+}
 
 /**
  * Drops this file's schema and closes its pool.
