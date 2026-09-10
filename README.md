@@ -56,7 +56,7 @@ Nothing reads a root `.env` — see the comment in `.env.example` for why.
 | Framework | Next.js (TypeScript) — one app: UI, CRUD API, and orchestrator entrypoint |
 | Framework version | Next.js 15.5.22, pinned exact — next-auth@5 is validated against Next 15 |
 | Database | Postgres (Supabase-hosted) via Drizzle ORM over node-postgres |
-| Orchestrator | LangGraph (TypeScript); LLM provider left configurable, not hard-coded |
+| Orchestrator | LangGraph (TypeScript); Gemini, with the model id read from `EVAL_MODEL_ID` |
 | Developer auth & repo access | GitHub OAuth, requesting `repo` scope — one token serves both developer identity and all repo reads. No GitHub App, no installation, no service-level credential anywhere in this design. |
 | Stakeholder auth | Email magic link — no shared password auth with developers |
 | Token custody | Held only in the developer's session, never persisted to a table — a deliberate choice, not a limitation; see below |

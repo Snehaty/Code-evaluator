@@ -11,7 +11,16 @@ export type EvaluatorInput = {
      * verbatim into both `EvidenceBundle.claimId` and `Report.claimId`.
      */
     claimId: string;
-    /** One or more, shared across every requirement in this batch. */
+    /**
+     * AT MOST ONE ENTRY PER REPO, and that is enforced, not merely expected.
+     *
+     * A commit is a full snapshot, so two commits of the same repo would give
+     * the planner two file trees whose paths overlap while the gatherer can
+     * only read one of them — the same path at the wrong commit reads
+     * successfully and silently yields the wrong content. `repo` is therefore
+     * the discriminator that maps a planned path back to a commit, and it only
+     * works while it is unique. See docs/orchestrator.md § 9.
+     */
     repoCommits: RepoCommit[];
   };
   /** One or more, evaluated together against the same claim. */
@@ -21,13 +30,42 @@ export type EvaluatorInput = {
     description: string;
   }[];
   github: GitHubReadTool;
+  /**
+   * Overrides the Evaluator's default model. Echoed into `Report.modelId`,
+   * which must always name the model that actually produced the verdicts —
+   * a report that misreports its own model undermines the record it anchors.
+   */
+  modelId?: string;
+  /**
+   * Wall-clock budget for the whole run. The Evaluator refuses to start work
+   * it cannot finish, rather than being killed mid-write by the host.
+   */
+  deadline?: Date;
+  /**
+   * Cancels the run when the caller goes away — a closed browser tab, a host
+   * tearing down the request. Distinct from `deadline`, which is the
+   * Evaluator's own budget rather than the caller's patience.
+   */
+  signal?: AbortSignal;
 };
+
+/**
+ * How a tool call ended.
+ *
+ * `not_found` and `truncated` are EVIDENCE — a fact about the repo, and a
+ * legitimate input to a verdict. `unavailable` is the ABSENCE of evidence: the
+ * call failed for a reason that says nothing about the code. Collapsing the two
+ * is how a rate limit turns into "not satisfied", which PRODUCT.md principle 2
+ * forbids.
+ */
+export type ToolCallOutcome = "ok" | "not_found" | "truncated" | "unavailable";
 
 export type ToolCall = {
   tool: string;
   args: Record<string, unknown>;
   result: string;
   at: string;
+  outcome: ToolCallOutcome;
 };
 
 /**
@@ -49,6 +87,21 @@ export type EvidenceBundle = {
   evaluationId: string;
   claimId: string;
   toolCallLog: ToolCall[];
+  /**
+   * Why the agent chose the files it read.
+   *
+   * Kept because a transcript of reads alone cannot be audited: it shows what
+   * was looked at, never what was passed over or why. Prose from the planning
+   * step, never source code.
+   */
+  planReasoning: string;
+  /**
+   * File requests that named nothing real, and the reason each was discarded.
+   *
+   * A planner naming a few paths that do not exist is ordinary, and dropping
+   * them silently would leave the transcript implying the agent never asked.
+   */
+  droppedPaths: string[];
 };
 
 /**
@@ -99,5 +152,46 @@ export class NotImplementedError extends Error {
   constructor(what: string) {
     super(`${what} is not implemented yet`);
     this.name = "NotImplementedError";
+  }
+}
+
+/**
+ * Why an evaluation produced no Report at all.
+ *
+ * The Report is ALL-OR-NOTHING. It is unconditionally stakeholder-visible the
+ * instant it exists and there is no pending state to park a draft in, so a
+ * partial or evidence-starved report is strictly worse than no report. Every
+ * failure therefore surfaces as a thrown error rather than a degraded verdict,
+ * which is what keeps `Verdict` at two members and `RequirementStatus` at
+ * three: a failed request is not a state a requirement rests in.
+ *
+ * The caller maps `kind` to a status code. The rule that matters at the
+ * transport layer: a verdict is a 200, a failure never is.
+ */
+export type EvaluationErrorKind =
+  /** The developer's GitHub token was rejected mid-run. Re-authenticate. */
+  | "unauthorized"
+  /** GitHub rate limit, with a reset beyond the run's budget. Retry later. */
+  | "rate_limited"
+  /** The repo or the claimed commit could not be read at all. */
+  | "repo_unreachable"
+  /** The model provider failed or returned unusable output after repair. */
+  | "model_unavailable"
+  /** Evidence was materially incomplete, so no sound verdict was possible. */
+  | "evidence_incomplete"
+  /** The run could not finish inside its budget. */
+  | "deadline_exceeded"
+  /** The caller's input violated the contract (e.g. duplicate repos). */
+  | "invalid_input";
+
+export class EvaluationError extends Error {
+  constructor(
+    readonly kind: EvaluationErrorKind,
+    message: string,
+    /** Present for `rate_limited`: when the limit resets. ISO 8601. */
+    readonly retryAt?: string,
+  ) {
+    super(message);
+    this.name = "EvaluationError";
   }
 }
