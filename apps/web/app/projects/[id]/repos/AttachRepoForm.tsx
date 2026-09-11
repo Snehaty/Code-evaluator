@@ -69,9 +69,8 @@ export function AttachRepoForm({
     setUndoError(null);
     try {
       const fd = new FormData();
-      fd.set("projectId", projectId);
       fd.set("repoId", justAttached.repoId);
-      const result = await detachRepoAction(undefined, fd);
+      const result = await detachRepoAction(projectId, fd);
       if (result.status === "error") {
         setUndoError(result.message);
         return;

@@ -67,7 +67,9 @@ export async function attachRepoAction(
     /* The attached list and the candidate picker are both rendered by the
      * server component above this form, so the moved row only appears —
      * and the picker only loses its option — once the route is
-     * revalidated. */
+     * revalidated. This sits inside the try, unlike projects/new/actions.ts,
+     * because there is no redirect() here to protect: this form keeps the
+     * developer on the same page whether the attach succeeds or fails. */
     revalidatePath(`/projects/${projectId}/repos`);
 
     return {
@@ -108,16 +110,17 @@ export type DetachState =
   | { status: "error"; message: string };
 
 export async function detachRepoAction(
-  _prev: DetachState | undefined,
+  projectId: string,
   formData: FormData,
 ): Promise<DetachState> {
-  const projectId = String(formData.get("projectId") ?? "");
   const repoId = String(formData.get("repoId") ?? "");
 
   try {
     const session = await requireSession();
     await detachRepo(getDb(), session, projectId, repoId);
 
+    /* Same reasoning as attachRepoAction above: no redirect() to protect,
+     * so revalidatePath stays inside the try. */
     revalidatePath(`/projects/${projectId}/repos`);
     return { status: "detached" };
   } catch (e) {
