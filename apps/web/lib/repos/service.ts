@@ -151,3 +151,27 @@ export async function detachRepo(
 
   await db.delete(projectRepos).where(eq(projectRepos.id, repoId));
 }
+
+/**
+ * Resolves an attachment id to its stored `fullName`.
+ *
+ * The branches and commits endpoints take a repo id, never a repo name: a
+ * caller-supplied name would let any developer member read any repo their token
+ * can reach, whether or not it is attached to this project.
+ */
+export async function getAttachedRepo(
+  db: Db,
+  session: Session,
+  projectId: string,
+  repoId: string,
+): Promise<AttachedRepo> {
+  await assertDeveloperMember(db, session, projectId);
+
+  const [row] = await db
+    .select()
+    .from(projectRepos)
+    .where(and(eq(projectRepos.id, repoId), eq(projectRepos.projectId, projectId)));
+
+  if (!row) throw notFound("No such attached repo");
+  return present(row);
+}
