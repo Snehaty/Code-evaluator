@@ -3,12 +3,24 @@ import { and, eq } from "drizzle-orm";
 import { projectRepos, type Db } from "@zkcvp/db";
 import {
   createGitHubClient,
+  GithubUnavailable,
+  listBranches,
+  listCommits,
   listUserRepos,
+  type GitHubClient,
+  type GithubBranch,
+  type GithubCommit,
   type GithubRepo,
 } from "@zkcvp/github";
 import { isDeveloperMember, isProjectMember } from "../auth/authorization";
 import type { DeveloperSession, Session } from "../auth/types";
-import { conflict, forbidden, isUniqueViolation, notFound } from "../api/errors";
+import {
+  conflict,
+  forbidden,
+  githubUnavailable,
+  isUniqueViolation,
+  notFound,
+} from "../api/errors";
 
 /**
  * Removal is an undo, not a detach.
@@ -153,19 +165,25 @@ export async function detachRepo(
 }
 
 /**
- * Resolves an attachment id to its stored `fullName`.
+ * Resolves an attachment id to its stored `fullName`, alongside the narrowed
+ * developer session that resolved it.
  *
  * The branches and commits endpoints take a repo id, never a repo name: a
  * caller-supplied name would let any developer member read any repo their token
  * can reach, whether or not it is attached to this project.
+ *
+ * Returning the developer session too means nothing downstream ever needs to
+ * re-inspect `session.kind` — `assertDeveloperMember` has already proven it,
+ * and a caller that only had the repo back would have no other way to reach
+ * for the access token without a redundant (and forgeable-by-omission) check.
  */
 export async function getAttachedRepo(
   db: Db,
   session: Session,
   projectId: string,
   repoId: string,
-): Promise<AttachedRepo> {
-  await assertDeveloperMember(db, session, projectId);
+): Promise<{ repo: AttachedRepo; developer: DeveloperSession }> {
+  const developer = await assertDeveloperMember(db, session, projectId);
 
   const [row] = await db
     .select()
@@ -173,5 +191,66 @@ export async function getAttachedRepo(
     .where(and(eq(projectRepos.id, repoId), eq(projectRepos.projectId, projectId)));
 
   if (!row) throw notFound("No such attached repo");
-  return present(row);
+  return { repo: present(row), developer };
+}
+
+/** Injected so tests never reach the network. Production passes the real call. */
+export type BranchLister = {
+  list: (client: GitHubClient, fullName: string) => Promise<GithubBranch[]>;
+};
+
+export const liveBranchLister: BranchLister = { list: listBranches };
+
+/**
+ * Lists a project's own branches for an attached repo, spending the acting
+ * developer's own GitHub token.
+ *
+ * The `GithubUnavailable` -> 503 translation lives here, in the one place both
+ * this and `listRepoCommits` funnel through, rather than duplicated per route:
+ * a rate-limited or unreachable GitHub is an infrastructure failure, never a
+ * 404 — reporting exhaustion as "no such thing" would tell a caller something
+ * false.
+ */
+export async function listRepoBranches(
+  db: Db,
+  session: Session,
+  projectId: string,
+  repoId: string,
+  gh: BranchLister = liveBranchLister,
+): Promise<GithubBranch[]> {
+  const { repo, developer } = await getAttachedRepo(db, session, projectId, repoId);
+
+  try {
+    return await gh.list(createGitHubClient(developer.githubAccessToken), repo.fullName);
+  } catch (e) {
+    if (e instanceof GithubUnavailable) throw githubUnavailable(e.message);
+    throw e;
+  }
+}
+
+/** Injected so tests never reach the network. Production passes the real call. */
+export type CommitLister = {
+  list: (client: GitHubClient, fullName: string, ref: string) => Promise<GithubCommit[]>;
+};
+
+export const liveCommitLister: CommitLister = { list: listCommits };
+
+/** Lists commits on `ref` for an attached repo. See `listRepoBranches` for why
+ * the `GithubUnavailable` translation lives in the service rather than the route. */
+export async function listRepoCommits(
+  db: Db,
+  session: Session,
+  projectId: string,
+  repoId: string,
+  ref: string,
+  gh: CommitLister = liveCommitLister,
+): Promise<GithubCommit[]> {
+  const { repo, developer } = await getAttachedRepo(db, session, projectId, repoId);
+
+  try {
+    return await gh.list(createGitHubClient(developer.githubAccessToken), repo.fullName, ref);
+  } catch (e) {
+    if (e instanceof GithubUnavailable) throw githubUnavailable(e.message);
+    throw e;
+  }
 }

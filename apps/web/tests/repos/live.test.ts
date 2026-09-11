@@ -9,8 +9,13 @@ import {
   stakeholders,
   type Db,
 } from "@zkcvp/db";
+import { GithubUnavailable, type GithubBranch, type GithubCommit } from "@zkcvp/github";
 import { ServiceError } from "../../lib/api/errors";
-import { getAttachedRepo } from "../../lib/repos/service";
+import {
+  getAttachedRepo,
+  listRepoBranches,
+  listRepoCommits,
+} from "../../lib/repos/service";
 
 async function fixture(db: Db) {
   const [s] = await db
@@ -54,9 +59,15 @@ describe("getAttachedRepo", () => {
     await withTestSchema(async (db) => {
       const { project, repo, devSession } = await fixture(db);
 
-      const found = await getAttachedRepo(db, devSession, project.id, repo.id);
+      const { repo: found, developer } = await getAttachedRepo(
+        db,
+        devSession,
+        project.id,
+        repo.id,
+      );
 
       expect(found.fullName).toBe("octocat/Hello-World");
+      expect(developer.githubAccessToken).toBe("gho_token");
     });
   });
 
@@ -72,6 +83,73 @@ describe("getAttachedRepo", () => {
       ).catch((e) => e);
 
       expect((err as ServiceError).status).toBe(404);
+    });
+  });
+});
+
+describe("listRepoBranches", () => {
+  it("returns whatever the injected lister returns", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, devSession } = await fixture(db);
+      const branches: GithubBranch[] = [{ name: "main", commitSha: "abc123" }];
+
+      const result = await listRepoBranches(db, devSession, project.id, repo.id, {
+        list: async () => branches,
+      });
+
+      expect(result).toEqual(branches);
+    });
+  });
+
+  it("translates a GithubUnavailable failure into a 503, not a 404", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, devSession } = await fixture(db);
+
+      const err = await listRepoBranches(db, devSession, project.id, repo.id, {
+        list: async () => {
+          throw new GithubUnavailable("rate limited");
+        },
+      }).catch((e) => e);
+
+      expect((err as ServiceError).status).toBe(503);
+      expect((err as ServiceError).code).toBe("github_unavailable");
+    });
+  });
+});
+
+describe("listRepoCommits", () => {
+  it("returns whatever the injected lister returns", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, devSession } = await fixture(db);
+      const commits: GithubCommit[] = [
+        {
+          sha: "abc123",
+          message: "Initial commit",
+          authorName: "Octocat",
+          committedAt: "2020-01-01T00:00:00Z",
+        },
+      ];
+
+      const result = await listRepoCommits(db, devSession, project.id, repo.id, "main", {
+        list: async () => commits,
+      });
+
+      expect(result).toEqual(commits);
+    });
+  });
+
+  it("translates a GithubUnavailable failure into a 503, not a 404", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, devSession } = await fixture(db);
+
+      const err = await listRepoCommits(db, devSession, project.id, repo.id, "main", {
+        list: async () => {
+          throw new GithubUnavailable("rate limited");
+        },
+      }).catch((e) => e);
+
+      expect((err as ServiceError).status).toBe(503);
+      expect((err as ServiceError).code).toBe("github_unavailable");
     });
   });
 });
