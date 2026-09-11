@@ -28,6 +28,50 @@
 
 ---
 
+## Progress
+
+**Task 1 is built and merged** (`203c111`), reviewed clean with no findings. Start at Task 2.
+
+The suite is green as of `95f333b` — 29 files, 202 tests, `npm run verify` exit 0. Any failure you
+see now is real. If database tests start timing out at ~5000ms again, read the `testTimeout` note in
+`vitest.config.ts` before assuming pooler exhaustion: the first test in a database file pays a
+one-time ~4.8s schema build, that cost grows with every migration, and the failure signature is
+almost indistinguishable from connection errors.
+
+## Corrections applied before execution
+
+A pre-flight scan of this plan found defects in its own code. They are recorded here rather than
+fixed inline, so the task text still matches what was reviewed and the correction stays visible as a
+correction. **Apply these — they override the task text.**
+
+| # | Task | Correction |
+|---|---|---|
+| C1 | 5 | The file list omits `packages/design-system-ledger/components/index.ts`. `EvaluationPhase` must be added to its type re-export block, or Task 6 cannot compile — it imports that type from `@zkcvp/design-system-ledger`. |
+| C3 | 3 | The 409 test writes `createdBy: requirement.createdBy`. `createRequirement` returns `RequirementView` (`apps/web/lib/requirements/service.ts:14`), which has no `createdBy`. Seed the v2 row with the stakeholder id the fixture already holds. |
+| C4 | 3 | Same test: delete the no-op `db.update(requirementVersions).set({})`, and import `requirements` at module top rather than via a dynamic `await import("@zkcvp/db")`. |
+| C5 | 3 | The "re-evaluation is symmetric" test gives `evidence.evaluationId` and `report.evaluationId` *different* `crypto.randomUUID()` values. The contract says both carry the same value, minted once per `evaluate()`. It passes either way because `recordEvaluation` keys off the report — so it silently teaches the contract wrong. Mint one id per iteration and use it for both. |
+| C6 | 4 | `z.string().uuid()` → `z.uuid()`. This app is on Zod 4 (`zod ^4.4.3`), where the top-level form is the idiom. |
+| C7 | 8 | Step 1 describes its second test in prose instead of giving code. Accepted as-is: the fixture it points at (`createClaim` then `recordEvaluation`, twice) is fully written out in Task 3 and named explicitly, so there is working code to copy. |
+| C8 | 3 | Drop the `!` in `requirement.currentVersionId!` — `RequirementView.currentVersionId` is `string`, not nullable. |
+
+Two corrections are already discharged and are listed only so they are not re-applied: **C2** (every
+`developers` fixture insert must supply `displayName`, which is `NOT NULL` with no default) was
+applied in Task 1 and still binds Task 3; **C9** (a foreign-key violation on `detachRepo`'s undo,
+made reachable by `claim_repos`' `ON DELETE RESTRICT`) shipped with Task 1 as `isForeignKeyViolation`
+plus a 409 translation.
+
+Two facts changed under this plan while Task 1 was being built:
+
+- **`project_repos` gained a `default_branch` column** (`NOT NULL`, migration `0002`), carried on
+  `AttachedRepo`. Any `project_repos` fixture must now supply it. Task 6 should read it straight off
+  the `AttachedRepo` to pre-select a branch — that is what `docs/plans/02-repo-attachment.md` asks
+  for and what its Recorded deviations section defers to this screen.
+- **A directly-inserted `projects` row creates no membership.** Authorization reads
+  `project_stakeholders` / `project_developers`, never `projects.created_by`. A fixture whose test
+  needs a stakeholder member must insert that row explicitly.
+
+---
+
 ### Task 1: The five claim tables
 
 **Files:**
