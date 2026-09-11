@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { withTestSchema } from "@zkcvp/db/testing";
 import { eq } from "drizzle-orm";
 import {
+  claimRepos,
+  claims,
   developers,
   projectDevelopers,
   projectRepos,
@@ -248,6 +250,44 @@ describe("detachRepo", () => {
         .select()
         .from(projectRepos)
         .where(eq(projectRepos.id, old.id));
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  it("returns 409, not a raw foreign-key error, once a claim references the attachment", async () => {
+    await withTestSchema(async (db) => {
+      const { project, dev, devSession } = await fixture(db);
+      const repo = await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      );
+
+      /* The claim tables from packages/db/src/schema/claims.ts — a claim
+       * transaction commits before evaluation runs, so a claim can reference
+       * this attachment well inside the 60-second undo window. */
+      const [claim] = await db
+        .insert(claims)
+        .values({ projectId: project.id, submittedBy: dev.id })
+        .returning();
+      await db.insert(claimRepos).values({
+        claimId: claim.id,
+        projectRepoId: repo.id,
+        commitSha: "a".repeat(40),
+      });
+
+      const err = await detachRepo(db, devSession, project.id, repo.id).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ServiceError);
+      expect((err as ServiceError).status).toBe(409);
+      expect((err as ServiceError).message).toMatch(/submitted claim/);
+
+      const rows = await db
+        .select()
+        .from(projectRepos)
+        .where(eq(projectRepos.id, repo.id));
       expect(rows).toHaveLength(1);
     });
   });

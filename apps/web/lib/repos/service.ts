@@ -19,6 +19,7 @@ import {
   forbidden,
   githubUnavailable,
   invalidBody,
+  isForeignKeyViolation,
   isUniqueViolation,
   notFound,
 } from "../api/errors";
@@ -218,7 +219,22 @@ export async function detachRepo(
     );
   }
 
-  await db.delete(projectRepos).where(eq(projectRepos.id, repoId));
+  /* Once a claim exists, `claim_repos.project_repo_id` holds ON DELETE RESTRICT
+   * against this row — a claim's own commit references stay meaningful for as
+   * long as the claim does. The undo window and a claim submission can both
+   * land inside the same 60 seconds, so this is a reachable 23503, not a
+   * theoretical one, and it must read as a conflict rather than surface as an
+   * unhandled 500. */
+  try {
+    await db.delete(projectRepos).where(eq(projectRepos.id, repoId));
+  } catch (e) {
+    if (isForeignKeyViolation(e)) {
+      throw conflict(
+        "This repo is referenced by a submitted claim and can no longer be removed.",
+      );
+    }
+    throw e;
+  }
 }
 
 /**

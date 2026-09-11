@@ -68,3 +68,26 @@ export function isUniqueViolation(e: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * Postgres foreign-key-violation SQLSTATE.
+ *
+ * Same `.cause`-walking shape as `isUniqueViolation` and for the same reason:
+ * drizzle-orm/node-postgres wraps every driver error in a `DrizzleQueryError`
+ * that carries the raw `pg` error on `.cause` rather than copying `.code`
+ * onto itself.
+ */
+export function isForeignKeyViolation(e: unknown): boolean {
+  let current: unknown = e;
+  for (let i = 0; i < 5 && current; i++) {
+    if (
+      typeof current === "object" &&
+      "code" in current &&
+      (current as { code?: unknown }).code === "23503"
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
