@@ -23,7 +23,11 @@ import { analyzeNode } from "./nodes/analyze";
 import { formatNode } from "./nodes/format";
 import { gatherNode } from "./nodes/gather";
 import { planNode } from "./nodes/plan";
-import { EvaluatorAnnotation, type EvaluatorState } from "./state";
+import {
+  EvaluatorAnnotation,
+  type EvaluatorState,
+  type EvaluatorUpdate,
+} from "./state";
 import { assertOneCommitPerRepo } from "./validation";
 
 /**
@@ -50,9 +54,17 @@ const graph = new StateGraph(EvaluatorAnnotation)
   .addEdge("format", END)
   .compile();
 
+/** The graph's nodes, in one place so the router and the stream agree. */
+const NODE_NAMES = ["plan", "gather", "analyze", "format"] as const;
+type NodeName = (typeof NODE_NAMES)[number];
+
+function isNodeName(value: string): value is NodeName {
+  return (NODE_NAMES as readonly string[]).includes(value);
+}
+
 /** Progress event for a caller that wants to show the run happening. */
 export type EvaluationProgress = {
-  node: "plan" | "gather" | "analyze" | "format";
+  node: NodeName;
   /** Files read so far, across every round. */
   filesGathered: number;
   /** Completed GATHER↔ANALYZE rounds. */
@@ -158,26 +170,40 @@ export class LangGraphEvaluator implements Evaluator {
     const context = buildContext(input);
 
     let latest: EvaluatorState | null = null;
+    let filesGathered = 0;
+    let iteration = 0;
 
-    const stream = await graph.stream(
-      initialState(input, evaluationId),
-      { ...runConfig(context, input.signal), streamMode: "values" },
-    );
+    // Two modes on purpose. `updates` names the node that just finished —
+    // LangGraph keys the chunk by node, so there is no need to infer it from
+    // the state, which cannot tell "before PLAN ran" from "after PLAN ran".
+    // `values` carries the full state, which is what the artifacts come from.
+    const stream = await graph.stream(initialState(input, evaluationId), {
+      ...runConfig(context, input.signal),
+      streamMode: ["updates", "values"],
+    });
 
-    for await (const value of stream) {
-      const state = value as EvaluatorState;
-      latest = state;
-      yield {
-        node: state.report
-          ? "format"
-          : state.verdicts.length > 0
-            ? "analyze"
-            : Object.keys(state.gatheredFiles).length > 0
-              ? "gather"
-              : "plan",
-        filesGathered: Object.keys(state.gatheredFiles).length,
-        iteration: state.iterationCount,
-      };
+    for await (const [mode, chunk] of stream) {
+      if (mode === "values") {
+        latest = chunk as EvaluatorState;
+        continue;
+      }
+
+      for (const [name, update] of Object.entries(
+        chunk as Record<string, EvaluatorUpdate>,
+      )) {
+        if (!isNodeName(name)) continue; // skip LangGraph's own markers
+
+        // Counted from the updates themselves rather than read off `values`,
+        // so progress does not depend on how the two modes interleave.
+        if (update.gatheredFiles) {
+          filesGathered += Object.keys(update.gatheredFiles).length;
+        }
+        if (typeof update.iterationCount === "number") {
+          iteration = update.iterationCount;
+        }
+
+        yield { node: name, filesGathered, iteration };
+      }
     }
 
     if (!latest) {
