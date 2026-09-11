@@ -115,6 +115,11 @@ seven stakeholder-facing screens — `/projects`, `/projects/new`, `/projects/[i
 `/projects/[id]/requirements/new`, `/requirements/[id]`, `/requirements/[id]/edit`, and
 `/projects/[id]/members` — are wired against the real Postgres schema and integration-tested.
 
+Plan 02's repo attachment has since landed on the same foundation: six more endpoints under
+`/api/projects/:projectId/repos`, reusing the same `ServiceError` → JSON shape rather than
+inventing one, and an eighth screen, `/projects/[id]/repos`. Sixteen endpoints and eight screens
+are wired and integration-tested in total.
+
 Known limitation, deliberately unaddressed in M4: nothing in `apps/web` catches a
 `SessionError` or a `ServiceError` thrown from a Server Component, and there is no
 `error.tsx` or `global-error.tsx` anywhere in `apps/web`. Middleware only checks cookie
@@ -300,7 +305,9 @@ path and the Server Component path from diverging — they are the same function
 this*. `requireProjectMember`/`requireStakeholderMember` in `session.ts` are page-level
 conveniences over the same predicates, so each rule still has exactly one implementation.
 
-Uniform error body across all ten endpoints — plan 01 fixes the status codes but not the shape:
+Uniform error body across all sixteen endpoints — plan 01 fixes the status codes and shape for
+its ten, and plan 02's six repo endpoints reuse the same `ServiceError` rather than defining
+their own:
 
 ```json
 { "error": { "code": "conflict", "message": "Already a member of this project" } }
@@ -346,11 +353,12 @@ Ledger ships no modal and no pagination, so create and edit are routed pages wit
 |---|---|
 | `/projects` | project list, `EmptyState` when none |
 | `/projects/new` | name field |
-| `/projects/[id]` | checklist, `ChecklistProgress`, a link to `/projects/[id]/members` |
+| `/projects/[id]` | checklist, `ChecklistProgress`, links to `/projects/[id]/members` and `/projects/[id]/repos` |
 | `/projects/[id]/requirements/new` | title + description |
 | `/requirements/[id]` | detail plus version history as a `Timeline` |
 | `/requirements/[id]/edit` | prefilled title + description |
 | `/projects/[id]/members` | members, pending invites, stakeholder-only invite form |
+| `/projects/[id]/repos` | attached repos, developer-only attach form with 60-second undo |
 
 `/projects` and `/projects/[id]` are built role-aware in one pass — stakeholders get the
 create/edit/archive actions, developer members get the same data read-only. Same query, one
@@ -374,11 +382,12 @@ same pattern). This table is kept as the role-split reference, not a list of pen
 |---|---|---|
 | `/projects` | both | project list |
 | `/projects/new` | stakeholder | |
-| `/projects/[id]` | both | checklist, `ChecklistProgress`, a link to `/projects/[id]/members` |
+| `/projects/[id]` | both | checklist, `ChecklistProgress`, links to `/projects/[id]/members` and `/projects/[id]/repos` |
 | `/projects/[id]/requirements/new` | stakeholder | routed page, not a dialog |
 | `/requirements/[id]` | both | detail plus version history as a `Timeline` |
 | `/requirements/[id]/edit` | stakeholder | routed page, not a dialog |
 | `/projects/[id]/members` | both | list; invite form is stakeholder-only |
+| `/projects/[id]/repos` | both | list; attach form and undo are developer-only |
 
 Ledger ships no modal and no pagination — deliberately absent until a real caller shapes their
 API. Create and edit are routed pages with inline forms. If a dialog proves necessary it is

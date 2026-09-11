@@ -34,6 +34,7 @@ webhooks, and no persisted access grant that could go stale.
 | project_id | FK → projects.id, not null | |
 | github_repo_id | string/int, not null | GitHub's numeric repo ID — stable across renames |
 | full_name | string, not null | cached for display only; may go stale after a rename (GitHub's own redirect typically still resolves API calls) — no dedicated refresh mechanism in this phase |
+| default_branch | string, not null | GitHub's own default branch, captured at attach time; for the claim composer to pre-select a branch from an `AttachedRepo` alone, without a fourth GitHub call this phase forecloses |
 | added_by | FK → developers.id, not null | |
 | added_at | timestamp, not null | |
 
@@ -58,10 +59,10 @@ Auth model per `01-requirement-management.md` (`{ kind, stakeholderId | develope
 |---|---|---|
 | `GET /api/projects/:id/repos` | any project member | reads `project_repos` only — no live GitHub call, so stakeholders can view it too |
 | `GET /api/projects/:id/repos/candidates` | developer member | live `GET /user/repos` (caller's token), minus repos already attached to *this* project |
-| `POST /api/projects/:id/repos` | developer member | body `{ githubRepoId, fullName }` from the candidates list; `409` if already attached to this project |
+| `POST /api/projects/:id/repos` | developer member | body `{ githubRepoId, fullName }`; `githubRepoId` is resolved against a fresh `GET /user/repos`, and `fullName`/`default_branch` are stored from GitHub's own answer, never the client's copy; `404` if the id is not visible to the caller's token, `409` if already attached to this project |
 | `DELETE /api/projects/:id/repos/:repoId` | developer member | `409` if outside the 60s undo window |
-| `GET /api/projects/:id/repos/:repoId/branches` | developer member | live `GET /repos/{owner}/{repo}/branches` (caller's token); default branch pre-selected in the UI |
-| `GET /api/projects/:id/repos/:repoId/commits?ref=` | developer member | live `GET /repos/{owner}/{repo}/commits?sha={ref}` (caller's token), paginated |
+| `GET /api/projects/:id/repos/:repoId/branches` | developer member | live `GET /repos/{owner}/{repo}/branches` (caller's token) |
+| `GET /api/projects/:id/repos/:repoId/commits?ref=` | developer member | live `GET /repos/{owner}/{repo}/commits?sha={ref}` (caller's token), first 50 |
 
 ## GitHub API calls made in this feature — all using the acting developer's own token
 
@@ -87,3 +88,30 @@ developer's own live GitHub permission at the moment of the call.
 1. `github_repo_id`, never `full_name`, is the join key — same rule as `developers.github_user_id` vs. `github_username`.
 2. Nothing here persists a GitHub credential; the developer's token lives only in their session (per `01-requirement-management.md`).
 3. Repo attachment is permanent past the 60s undo window — no detach, no soft-delete state, no cascading-removal case to design for later.
+
+## Recorded deviations
+
+- **Commit browsing is one page of 50, not paginated.** `GET /repos/{owner}/{repo}/commits` is
+  called once with `per_page=50` and nothing links to a second page. Ledger ships no pagination
+  component, and adding one before a real caller shapes its API is speculative work this codebase
+  avoids. The claim screen picks from that first page; if 50 proves too few in practice,
+  pagination is an additive change to the commits endpoint alone.
+- **No default-branch pre-selection in the UI yet**, though `project_repos.default_branch` is now
+  persisted at attach time specifically so the claim composer can read it straight off an
+  `AttachedRepo` when that screen is built, rather than needing a fourth GitHub call this phase
+  forecloses.
+- **The candidate list is capped at the 100 most recently updated repositories** — `GET
+  /user/repos` is called once with `per_page=100&sort=updated`, unpaginated, for the same reason
+  commit browsing is: no pagination component exists yet. A developer whose repo falls outside
+  that window has no way to attach it from the picker today. The zero-candidates copy in
+  `AttachRepoForm` says so rather than claiming every repository is already attached, which would
+  not always be true.
+- **A permanently revoked grant reads the same as a transient outage.** GitHub returns 403 both
+  for an exhausted rate limit and for a real, permanent loss of access (the developer removed the
+  app's grant, or lost repo access entirely). `authedJson` in `packages/github` tells the two
+  apart only by the `x-ratelimit-remaining` header; a non-rate-limited 403 still surfaces as
+  `GithubUnavailable` / `github_unavailable` with "Try again shortly," which is the wrong message
+  for a failure that retrying cannot fix. This is fine while the only consequence is a developer
+  re-trying a picker. It must be fixed — a distinct error type or code for a genuine permission
+  failure — before the evaluator path ships, where the same ambiguity would tell a stakeholder a
+  verification is temporarily stalled when it is permanently blocked.
