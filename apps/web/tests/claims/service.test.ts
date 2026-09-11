@@ -18,7 +18,7 @@ import {
 import type { EvidenceBundle, Report } from "@zkcvp/contracts";
 import { ServiceError } from "../../lib/api/errors";
 import { createRequirement } from "../../lib/requirements/service";
-import { createClaim, evidenceHash, recordEvaluation } from "../../lib/claims/service";
+import { createClaim, evidenceHash, getClaim, recordEvaluation } from "../../lib/claims/service";
 
 async function fixture(db: Db) {
   const [s] = await db
@@ -148,6 +148,22 @@ describe("createClaim", () => {
       expect((err as ServiceError).status).toBe(403);
     });
   });
+
+  it("409s when a claim names the same repo twice", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, devSession } = await fixture(db);
+
+      const err = await createClaim(db, devSession, project.id, {
+        requirementVersionIds: [requirement.currentVersionId],
+        repos: [
+          { projectRepoId: repo.id, commitSha: sha },
+          { projectRepoId: repo.id, commitSha: "b".repeat(40) },
+        ],
+      }).catch((e) => e);
+
+      expect((err as ServiceError).status).toBe(409);
+    });
+  });
 });
 
 function artifacts(
@@ -268,6 +284,82 @@ describe("recordEvaluation", () => {
         .from(requirementVersions)
         .where(eq(requirementVersions.id, versionId));
       expect(version.status).toBe("new");
+    });
+  });
+});
+
+describe("getClaim", () => {
+  it("never returns the evidence bundle", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, devSession, shSession } = await fixture(db);
+      const versionId = requirement.currentVersionId;
+      const claim = await createClaim(db, devSession, project.id, {
+        requirementVersionIds: [versionId],
+        repos: [{ projectRepoId: repo.id, commitSha: sha }],
+      });
+      await recordEvaluation(
+        db,
+        claim.claimId,
+        artifacts(claim.claimId, versionId, "satisfied", crypto.randomUUID()),
+      );
+
+      const detail = await getClaim(db, shSession, claim.claimId);
+
+      expect(detail.evaluation).not.toBeNull();
+      expect(detail.evaluation).not.toHaveProperty("evidence");
+      expect(detail.evaluation).not.toHaveProperty("toolCallLog");
+      expect(detail.evaluation).not.toHaveProperty("planReasoning");
+      expect(detail.evaluation).not.toHaveProperty("droppedPaths");
+    });
+  });
+
+  it("refuses a non-member", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, devSession } = await fixture(db);
+      const claim = await createClaim(db, devSession, project.id, {
+        requirementVersionIds: [requirement.currentVersionId],
+        repos: [{ projectRepoId: repo.id, commitSha: sha }],
+      });
+
+      const [outsider] = await db
+        .insert(stakeholders)
+        .values({ email: "outsider@example.com", displayName: "Outsider" })
+        .returning();
+      const outsiderSession = { kind: "stakeholder" as const, stakeholderId: outsider.id };
+
+      const err = await getClaim(db, outsiderSession, claim.claimId).catch((e) => e);
+
+      expect((err as ServiceError).status).toBe(403);
+    });
+  });
+
+  it("is readable by a stakeholder member", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, devSession, shSession } = await fixture(db);
+      const claim = await createClaim(db, devSession, project.id, {
+        requirementVersionIds: [requirement.currentVersionId],
+        repos: [{ projectRepoId: repo.id, commitSha: sha }],
+      });
+
+      const detail = await getClaim(db, shSession, claim.claimId);
+
+      expect(detail.id).toBe(claim.claimId);
+      expect(detail.commits).toEqual([{ fullName: "octocat/Hello-World", commitSha: sha }]);
+    });
+  });
+
+  it("reads as evaluation: null for an interrupted run", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, devSession, shSession } = await fixture(db);
+      const claim = await createClaim(db, devSession, project.id, {
+        requirementVersionIds: [requirement.currentVersionId],
+        repos: [{ projectRepoId: repo.id, commitSha: sha }],
+      });
+
+      // recordEvaluation is simply never called — the abandoned-submission shape.
+      const detail = await getClaim(db, shSession, claim.claimId);
+
+      expect(detail.evaluation).toBeNull();
     });
   });
 });

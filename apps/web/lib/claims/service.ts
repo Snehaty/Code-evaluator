@@ -107,6 +107,10 @@ export async function createClaim(
   }
 
   const repoIds = input.repos.map((r) => r.projectRepoId);
+  if (repoIds.length !== new Set(repoIds).size) {
+    throw conflict("A claim may name at most one commit per repo");
+  }
+
   const attached = await db
     .select()
     .from(projectRepos)
