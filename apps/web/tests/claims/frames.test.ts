@@ -39,6 +39,14 @@ describe("decodeFrames", () => {
     expect(frames).toHaveLength(2);
     expect(frames[1]).toEqual(done);
   });
+
+  it("throws on syntactically malformed JSON", () => {
+    expect(() => decodeFrames('{"t":"progress"\n')).toThrow();
+  });
+
+  it("throws on structurally invalid frame (unknown t value)", () => {
+    expect(() => decodeFrames('{"foo":1}\n')).toThrow();
+  });
 });
 
 describe("isTerminal", () => {
