@@ -75,6 +75,14 @@ export default async function ProjectPage({
                 Members
               </Button>
             </Link>
+            {/* Both roles read the attached repos; only a developer member
+             * attaches or removes one — the repos page itself decides that,
+             * the same way the members page decides who may invite. */}
+            <Link href={`/projects/${id}/repos`}>
+              <Button type="button" tone="secondary">
+                Repositories
+              </Button>
+            </Link>
             {isStakeholder ? (
               <Link href={`/projects/${id}/requirements/new`}>
                 <Button type="button" tone="primary">
