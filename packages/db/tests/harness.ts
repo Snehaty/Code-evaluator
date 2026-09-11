@@ -115,7 +115,29 @@ async function ensureSchema(): Promise<{ shared: Shared; created: boolean }> {
 
   const pool = new pg.Pool({
     connectionString: url,
-    max: 2,
+    /**
+     * ONE connection per file, not two.
+     *
+     * Tests inside a file run sequentially (see `withTestSchema`), so a second
+     * connection is never in use — it only widens the peak. That peak is the
+     * binding constraint: file parallelism is uncapped, so every database file
+     * holds its pool at once, and this database allows 60 connections with 3
+     * reserved while Supabase's own services (PostgREST, pg_cron, pg_net, the
+     * exporter, Supavisor) permanently occupy about 13 of the rest.
+     *
+     * At `max: 2` and 13 database files that is ~26 connections plus a
+     * transient admin client per file during setup. That was never observed to
+     * exhaust the pooler — the intermittent failures that prompted this look
+     * were timeouts, not connection errors (see `testTimeout` in
+     * `vitest.config.ts`) — but the second connection was pure headroom spent
+     * for nothing, and the margin is worth keeping as the file count grows.
+     *
+     * Safe only while nothing holds a pooled connection and asks for another:
+     * a `db.transaction()` whose body touched `db` instead of `tx` would
+     * deadlock outright here rather than merely queueing. Every transaction in
+     * the app uses `tx` exclusively; check that before raising this back.
+     */
+    max: 1,
     options: `-c search_path="${name}"`,
   });
 
