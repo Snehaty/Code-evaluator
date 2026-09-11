@@ -53,6 +53,7 @@ export async function POST(
    * left to replace. */
   let claim: Awaited<ReturnType<typeof createClaim>>;
   let token: string;
+  let deadline: Date;
   try {
     const { projectId } = await params;
     const session = await requireSession();
@@ -60,12 +61,12 @@ export async function POST(
     claim = await createClaim(db, session, projectId, body);
     if (session.kind !== "developer") throw new Error("unreachable: createClaim asserts developer");
     token = session.githubAccessToken;
+    const ceilingSeconds = env().EVAL_CEILING_SECONDS;
+    deadline = new Date(Date.now() + ceilingSeconds * 1000);
   } catch (e) {
     return errorResponse(e);
   }
 
-  const ceilingSeconds = env().EVAL_CEILING_SECONDS;
-  const deadline = new Date(Date.now() + ceilingSeconds * 1000);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -73,6 +74,9 @@ export async function POST(
       const send = (frame: ClaimFrame) =>
         controller.enqueue(encoder.encode(encodeFrame(frame)));
 
+      /* Set only once `recordEvaluation` has committed — see the comment below
+       * this try block for why that boundary matters. */
+      let evaluationId: string;
       try {
         const github = createGitHubReadTool(token, { deadline, signal: req.signal });
         const evaluator = new LangGraphEvaluator();
@@ -101,9 +105,7 @@ export async function POST(
 
         const { evidence, report } = next.value;
         await recordEvaluation(db, claim.claimId, { evidence, report });
-
-        send({ t: "done", claimId: claim.claimId, evaluationId: report.evaluationId });
-        controller.close();
+        evaluationId = report.evaluationId;
       } catch (e) {
         const frame: ClaimFrame =
           e instanceof EvaluationError
@@ -125,6 +127,27 @@ export async function POST(
          * mistakable for a completed one, and this is the belt to the
          * terminal frame's braces. */
         controller.error(new Error(frame.message));
+        return;
+      }
+
+      /* The evaluation is committed at this point — the evaluation row, the
+       * verdicts, and the requirement-version status writes all landed inside
+       * `recordEvaluation`'s transaction, above. Nothing from here on may be
+       * reported through the `failed` branch: a `send`/`close` failure here
+       * means the transport broke AFTER a real verdict was persisted, not
+       * that the evaluation failed. Conflating the two would let a client
+       * disconnect at exactly the wrong instant turn a genuine, saved verdict
+       * into a false "failed" frame — the same class of bug this file exists
+       * to prevent, just on the other side of the write. There is also
+       * nothing useful to send the client and nothing to undo: the verdict is
+       * safely on disk and reachable at /claims/<claimId> regardless of
+       * whether this last frame ever arrives. So it is swallowed, logged for
+       * operators, and NOT surfaced as a failure. */
+      try {
+        send({ t: "done", claimId: claim.claimId, evaluationId });
+        controller.close();
+      } catch (e) {
+        console.error("claim submission: post-commit stream write failed", e);
       }
     },
   });
