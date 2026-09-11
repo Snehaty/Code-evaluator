@@ -23,6 +23,15 @@ export const projectRepos = pgTable(
      * a refresh mechanism nothing yet needs.
      */
     fullName: text("full_name").notNull(),
+    /**
+     * GitHub's own default branch, captured at the moment of attach — `attachRepo`
+     * resolves the submitted repo against a live GitHub list before inserting,
+     * so it always has GitHub's current value to write here. The claim
+     * composer needs it to pre-select a branch from an `AttachedRepo` alone —
+     * re-listing the whole account, or a later migration, are the two
+     * alternatives plan 02 forecloses.
+     */
+    defaultBranch: text("default_branch").notNull(),
     addedBy: uuid("added_by")
       .notNull()
       .references(() => developers.id),

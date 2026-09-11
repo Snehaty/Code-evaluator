@@ -9,10 +9,11 @@ import {
   stakeholders,
   type Db,
 } from "@zkcvp/db";
-import { GithubUnavailable, type GithubBranch, type GithubCommit } from "@zkcvp/github";
+import { GithubUnavailable, type GithubBranch, type GithubCommit, type GithubRepo } from "@zkcvp/github";
 import { ServiceError } from "../../lib/api/errors";
 import {
   getAttachedRepo,
+  listCandidateRepos,
   listRepoBranches,
   listRepoCommits,
 } from "../../lib/repos/service";
@@ -39,6 +40,7 @@ async function fixture(db: Db) {
       projectId: project.id,
       githubRepoId: "1296269",
       fullName: "octocat/Hello-World",
+      defaultBranch: "main",
       addedBy: dev.id,
     })
     .returning();
@@ -83,6 +85,23 @@ describe("getAttachedRepo", () => {
       ).catch((e) => e);
 
       expect((err as ServiceError).status).toBe(404);
+    });
+  });
+});
+
+describe("listCandidateRepos", () => {
+  it("translates a GithubUnavailable failure into a 503, not an empty list", async () => {
+    await withTestSchema(async (db) => {
+      const { project, devSession } = await fixture(db);
+
+      const err = await listCandidateRepos(db, devSession, project.id, {
+        list: async (): Promise<GithubRepo[]> => {
+          throw new GithubUnavailable("rate limited");
+        },
+      }).catch((e) => e);
+
+      expect((err as ServiceError).status).toBe(503);
+      expect((err as ServiceError).code).toBe("github_unavailable");
     });
   });
 });

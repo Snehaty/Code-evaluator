@@ -21,9 +21,15 @@ type JustAttached = { repoId: string; fullName: string; seconds: number };
 export function AttachRepoForm({
   projectId,
   candidates,
+  unavailable = false,
 }: {
   projectId: string;
   candidates: GithubRepo[];
+  /** GitHub could not be reached while the server component loaded
+   * candidates — see page.tsx. The attached-repos table above this form
+   * still rendered; only the picker, which needs a live GitHub call, could
+   * not. */
+  unavailable?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     attachRepoAction.bind(null, projectId),
@@ -105,13 +111,24 @@ export function AttachRepoForm({
         </Alert>
       )}
 
-      {candidates.length === 0 ? (
+      {unavailable ? (
+        /* A rate-limited or unreachable GitHub during the page load, not a
+         * verdict on what the developer's account can see — the attached
+         * list above this form rendered fine, since it makes no GitHub call
+         * at all. See page.tsx. */
+        <Alert tone="danger" title="Could not load repositories">
+          GitHub could not be reached. Try again shortly.
+        </Alert>
+      ) : candidates.length === 0 ? (
         /* Not an EmptyState: this sits inside a card that already has a
          * heading, and a second nested empty-state title here would just
-         * repeat it. */
+         * repeat it. Deliberately not worded as "every repository is
+         * attached" — this list is capped at the 100 most recently updated
+         * repositories your GitHub account can see, so that claim would not
+         * always be true. */
         <p className="lg-caption">
-          Every repository your GitHub account can see is already attached to
-          this project.
+          Nothing left to attach among your 100 most recently updated GitHub
+          repositories.
         </p>
       ) : (
         <form action={formAction}>

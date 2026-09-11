@@ -18,6 +18,7 @@ import {
   conflict,
   forbidden,
   githubUnavailable,
+  invalidBody,
   isUniqueViolation,
   notFound,
 } from "../api/errors";
@@ -35,13 +36,15 @@ export type AttachedRepo = {
   id: string;
   githubRepoId: string;
   fullName: string;
+  /** GitHub's own default branch at attach time. Not yet consumed by any UI. */
+  defaultBranch: string;
   addedAt: Date;
   /** Absolute instant the undo expires. The UI never computes this itself. */
   undoableUntil: Date;
 };
 
 /** Injected so tests never reach the network. Production passes the real call. */
-export type RepoLister = { list: (client: ReturnType<typeof createGitHubClient>) => Promise<GithubRepo[]> };
+export type RepoLister = { list: (client: GitHubClient) => Promise<GithubRepo[]> };
 
 export const liveRepoLister: RepoLister = { list: listUserRepos };
 
@@ -49,6 +52,7 @@ const present = (row: typeof projectRepos.$inferSelect): AttachedRepo => ({
   id: row.id,
   githubRepoId: row.githubRepoId,
   fullName: row.fullName,
+  defaultBranch: row.defaultBranch,
   addedAt: row.addedAt,
   undoableUntil: new Date(row.addedAt.getTime() + UNDO_WINDOW_MS),
 });
@@ -89,6 +93,12 @@ export async function listAttachedRepos(
   return rows.map(present);
 }
 
+/**
+ * Reads live from GitHub, so a rate-limited or unreachable GitHub has to be
+ * told apart from "this developer's account can see nothing" — see
+ * `listRepoBranches` for why this translation lives beside every other
+ * live-GitHub call rather than in the route.
+ */
 export async function listCandidateRepos(
   db: Db,
   session: Session,
@@ -103,17 +113,63 @@ export async function listCandidateRepos(
     .where(eq(projectRepos.projectId, projectId));
 
   const taken = new Set(attached.map((r) => r.githubRepoId));
-  const all = await gh.list(createGitHubClient(dev.githubAccessToken));
+
+  let all: GithubRepo[];
+  try {
+    all = await gh.list(createGitHubClient(dev.githubAccessToken));
+  } catch (e) {
+    if (e instanceof GithubUnavailable) throw githubUnavailable(e.message);
+    throw e;
+  }
+
   return all.filter((r) => !taken.has(r.githubRepoId));
 }
 
+/**
+ * Attaches a repo the acting developer names by `githubRepoId`.
+ *
+ * Plan 02 says the attach body comes "from the candidates list", but nothing
+ * enforced that — a client could submit any `{ githubRepoId, fullName }` pair
+ * on trust, and the two were never even checked against each other. This
+ * resolves the submitted id against the developer's own live list (the same
+ * list `listCandidateRepos` builds the picker from) and stores GitHub's OWN
+ * `fullName` and `defaultBranch`, never the client's copy — an attach can
+ * therefore only ever name a repo this developer's token can see right now,
+ * and the stored display name is authoritative at the moment it was written.
+ */
 export async function attachRepo(
   db: Db,
   session: Session,
   projectId: string,
   input: { githubRepoId: string; fullName: string },
+  gh: RepoLister = liveRepoLister,
 ): Promise<AttachedRepo> {
   const dev = await assertDeveloperMember(db, session, projectId);
+
+  const githubRepoId = input.githubRepoId.trim();
+  const fullName = input.fullName.trim();
+  if (!githubRepoId || !fullName) {
+    throw invalidBody({
+      ...(githubRepoId ? {} : { githubRepoId: "Required" }),
+      ...(fullName ? {} : { fullName: "Required" }),
+    });
+  }
+
+  let candidates: GithubRepo[];
+  try {
+    candidates = await gh.list(createGitHubClient(dev.githubAccessToken));
+  } catch (e) {
+    if (e instanceof GithubUnavailable) throw githubUnavailable(e.message);
+    throw e;
+  }
+
+  /* Not a client-trusted lookup: the client's `fullName` is discarded from
+   * here on. Only a repo this developer's own token can currently see may be
+   * attached, and only under GitHub's own name for it. */
+  const match = candidates.find((r) => r.githubRepoId === githubRepoId);
+  if (!match) {
+    throw notFound("No such repository visible to your GitHub account");
+  }
 
   /* Insert and let the unique constraint arbitrate, rather than checking then
    * inserting — the same approach the developer-invite endpoint takes, and for
@@ -123,8 +179,9 @@ export async function attachRepo(
       .insert(projectRepos)
       .values({
         projectId,
-        githubRepoId: input.githubRepoId,
-        fullName: input.fullName,
+        githubRepoId: match.githubRepoId,
+        fullName: match.fullName,
+        defaultBranch: match.defaultBranch,
         addedBy: dev.developerId,
       })
       .returning();

@@ -79,12 +79,16 @@ describe("attachRepo", () => {
     await withTestSchema(async (db) => {
       const { project, devSession } = await fixture(db);
 
-      const repo = await attachRepo(db, devSession, project.id, {
-        githubRepoId: hello.githubRepoId,
-        fullName: hello.fullName,
-      });
+      const repo = await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      );
 
       expect(repo.fullName).toBe("octocat/Hello-World");
+      expect(repo.defaultBranch).toBe("main");
       expect(repo.undoableUntil.getTime()).toBe(repo.addedAt.getTime() + 60_000);
     });
   });
@@ -93,9 +97,11 @@ describe("attachRepo", () => {
     await withTestSchema(async (db) => {
       const { project, devSession } = await fixture(db);
       const args = { githubRepoId: hello.githubRepoId, fullName: hello.fullName };
-      await attachRepo(db, devSession, project.id, args);
+      await attachRepo(db, devSession, project.id, args, lists([hello, spoon]));
 
-      const err = await attachRepo(db, devSession, project.id, args).catch((e) => e);
+      const err = await attachRepo(db, devSession, project.id, args, lists([hello, spoon])).catch(
+        (e) => e,
+      );
 
       expect(err).toBeInstanceOf(ServiceError);
       expect((err as ServiceError).status).toBe(409);
@@ -106,12 +112,51 @@ describe("attachRepo", () => {
     await withTestSchema(async (db) => {
       const { project, shSession } = await fixture(db);
 
-      const err = await attachRepo(db, shSession, project.id, {
-        githubRepoId: hello.githubRepoId,
-        fullName: hello.fullName,
-      }).catch((e) => e);
+      const err = await attachRepo(
+        db,
+        shSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      ).catch((e) => e);
 
       expect((err as ServiceError).status).toBe(403);
+    });
+  });
+
+  it("rejects a githubRepoId that does not match anything the developer's token can see", async () => {
+    await withTestSchema(async (db) => {
+      const { project, devSession } = await fixture(db);
+
+      const err = await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: "does-not-exist", fullName: "someone/else" },
+        lists([hello, spoon]),
+      ).catch((e) => e);
+
+      expect(err).toBeInstanceOf(ServiceError);
+      expect((err as ServiceError).status).toBe(404);
+    });
+  });
+
+  it("stores GitHub's own fullName, not the client-supplied one", async () => {
+    await withTestSchema(async (db) => {
+      const { project, devSession } = await fixture(db);
+
+      /* The id is genuine but the client's fullName is stale or forged — the
+       * stored row must carry what GitHub's own list says for that id, never
+       * what the client claimed. */
+      const repo = await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: "spoofed/name" },
+        lists([hello, spoon]),
+      );
+
+      expect(repo.fullName).toBe(hello.fullName);
     });
   });
 });
@@ -120,10 +165,13 @@ describe("listAttachedRepos", () => {
   it("is readable by a stakeholder member — no GitHub call is involved", async () => {
     await withTestSchema(async (db) => {
       const { project, devSession, shSession } = await fixture(db);
-      await attachRepo(db, devSession, project.id, {
-        githubRepoId: hello.githubRepoId,
-        fullName: hello.fullName,
-      });
+      await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      );
 
       const rows = await listAttachedRepos(db, shSession, project.id);
 
@@ -136,10 +184,13 @@ describe("listCandidateRepos", () => {
   it("removes repos already attached to THIS project", async () => {
     await withTestSchema(async (db) => {
       const { project, devSession } = await fixture(db);
-      await attachRepo(db, devSession, project.id, {
-        githubRepoId: hello.githubRepoId,
-        fullName: hello.fullName,
-      });
+      await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      );
 
       const candidates = await listCandidateRepos(
         db,
@@ -157,10 +208,13 @@ describe("detachRepo", () => {
   it("removes a repo inside the undo window", async () => {
     await withTestSchema(async (db) => {
       const { project, devSession } = await fixture(db);
-      const repo = await attachRepo(db, devSession, project.id, {
-        githubRepoId: hello.githubRepoId,
-        fullName: hello.fullName,
-      });
+      const repo = await attachRepo(
+        db,
+        devSession,
+        project.id,
+        { githubRepoId: hello.githubRepoId, fullName: hello.fullName },
+        lists([hello, spoon]),
+      );
 
       await detachRepo(db, devSession, project.id, repo.id);
 
@@ -181,6 +235,7 @@ describe("detachRepo", () => {
           projectId: project.id,
           githubRepoId: hello.githubRepoId,
           fullName: hello.fullName,
+          defaultBranch: "main",
           addedBy: dev.id,
           addedAt: new Date(Date.now() - 61_000),
         })
@@ -214,6 +269,7 @@ describe("detachRepo", () => {
           projectId: other.id,
           githubRepoId: hello.githubRepoId,
           fullName: hello.fullName,
+          defaultBranch: "main",
           addedBy: dev.id,
         })
         .returning();

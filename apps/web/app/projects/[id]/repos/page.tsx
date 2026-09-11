@@ -12,9 +12,11 @@ import {
   Table,
   Td,
 } from "@zkcvp/design-system-ledger/components";
+import type { GithubRepo } from "@zkcvp/github";
 import { getDb } from "../../../../lib/db";
 import { requireSession } from "../../../../lib/auth/session";
 import { getProject } from "../../../../lib/projects/service";
+import { ServiceError } from "../../../../lib/api/errors";
 import {
   listAttachedRepos,
   listCandidateRepos,
@@ -64,7 +66,27 @@ export default async function ReposPage({
    * membership again on its own; this only decides whether it is called at
    * all. */
   const isDeveloper = session.kind === "developer";
-  const candidates = isDeveloper ? await listCandidateRepos(db, session, id) : [];
+  let candidates: GithubRepo[] = [];
+  let candidatesUnavailable = false;
+  if (isDeveloper) {
+    try {
+      candidates = await listCandidateRepos(db, session, id);
+    } catch (e) {
+      /* A rate-limited or unreachable GitHub must not take the whole screen
+       * down with it — this app has no error.tsx anywhere, so an uncaught
+       * throw from a Server Component replaces the entire page, including
+       * the attached-repos table above, which makes no GitHub call at all
+       * and which a stakeholder member is entitled to read regardless of
+       * GitHub's state. Only the picker degrades; it renders its own danger
+       * alert instead. Mirrors how the members screen treats the same
+       * failure from inviteDeveloper (see members/actions.ts). */
+      if (e instanceof ServiceError && e.code === "github_unavailable") {
+        candidatesUnavailable = true;
+      } else {
+        throw e;
+      }
+    }
+  }
 
   return (
     <main className="lg-container app-page">
@@ -137,7 +159,11 @@ export default async function ReposPage({
                   repository stays attached for the life of this project —
                   there is no separate remove.
                 </p>
-                <AttachRepoForm projectId={id} candidates={candidates} />
+                <AttachRepoForm
+                  projectId={id}
+                  candidates={candidates}
+                  unavailable={candidatesUnavailable}
+                />
               </div>
             </CardBody>
           </Card>

@@ -30,6 +30,7 @@ describe("project_repos", () => {
           projectId: p.id,
           githubRepoId: "1296269",
           fullName: "octocat/Hello-World",
+          defaultBranch: "main",
           addedBy: d.id,
         })
         .returning();
@@ -46,6 +47,7 @@ describe("project_repos", () => {
         projectId: p.id,
         githubRepoId: "1296269",
         fullName: "octocat/Hello-World",
+        defaultBranch: "main",
         addedBy: d.id,
       };
       await db.insert(projectRepos).values(values);
@@ -75,6 +77,7 @@ describe("project_repos", () => {
         projectId: p.id,
         githubRepoId: "1296269",
         fullName: "octocat/Hello-World",
+        defaultBranch: "main",
         addedBy: d.id,
       });
       const [second] = await db
@@ -83,6 +86,7 @@ describe("project_repos", () => {
           projectId: p2.id,
           githubRepoId: "1296269",
           fullName: "octocat/Hello-World",
+          defaultBranch: "main",
           addedBy: d.id,
         })
         .returning();
