@@ -10,17 +10,13 @@ export default defineConfig({
      * @zkcvp/design-system-ledger`) which server-renders real markup. It is not
      * a Vitest suite and is not collected here.
      *
-     * packages/orchestrator/tests/integration.test.ts is a MANUAL script, not a
-     * suite — its own header says to run it with
-     * `GITHUB_TOKEN=... GOOGLE_API_KEY=... npx tsx`. It hits a live repo and a
-     * live LLM, so collecting it here would make the suite fail for anyone
-     * without both credentials. Run it by hand when you want it. */
-    exclude: [
-      "**/node_modules/**",
-      "**/.next/**",
-      "**/dist/**",
-      "packages/orchestrator/tests/**",
-    ],
+     * The orchestrator's live end-to-end check is
+     * packages/orchestrator/tests/integration-manual.ts — named so it falls
+     * outside the `*.test.ts` include rather than needing an exclude entry,
+     * because a blanket exclude on that directory also hid the real unit tests
+     * beside it. It hits a live repo and a live LLM; run it by hand with
+     * `GITHUB_TOKEN=... GOOGLE_API_KEY=... npx tsx`. */
+    exclude: ["**/node_modules/**", "**/.next/**", "**/dist/**"],
 
     /* Drops each test file's database schema and closes its pool when the file
      * finishes. Required, not bookkeeping: the harness holds a pg.Pool in module

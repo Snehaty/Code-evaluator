@@ -570,9 +570,32 @@ In the Vercel dashboard, import the git repository, then set:
 | Root Directory | `apps/web` |
 | Framework Preset | Next.js |
 | Build Command | leave as the default |
-| Install Command | leave as the default |
+| Install Command | **override** — `cd ../.. && npm install` |
 
-Leave the install command at its default. Vercel's default keeps devDependencies, which is what lets `postinstall` run `patch-package`; an override adding `--omit=dev` or `--ignore-scripts` fails the install or, worse, silently ships an unpatched `@auth/core`.
+The install command must be overridden. Vercel's default for a monorepo root
+directory is `npm install --prefix=../..`, which installs into the workspace root
+but never runs the root package's lifecycle scripts — so `postinstall` never fires,
+`patch-package` never runs, and the deployment silently ships an unpatched
+`@auth/core`. It exits 0 with no warning; the only way to see it is to grep the
+installed file.
+
+Verified 2026-08-30 by wiping `node_modules` and grepping
+`node_modules/@auth/core/lib/utils/assert.js` for the patch's `PATCHED (zkcvp)` marker:
+
+| Install command | `postinstall` ran | Patch applied |
+|---|---|---|
+| `npm ci` (repo root) | yes | yes |
+| `npm install --prefix=../..` (Vercel default) | no | **no** |
+| `cd ../.. && npm install` | yes | yes |
+
+Whatever you set, it must run at the repo root and keep devDependencies —
+`patch-package` is a root devDependency, so an override adding `--omit=dev` or
+`--ignore-scripts` fails the install or ships unpatched just the same.
+
+Unpatched, the module-level `let`s in `@auth/core`'s `assertConfig` leak between the
+two Auth.js instances sharing a process: the adapter-less GitHub instance is told
+"email login requires an adapter" purely because the stakeholder instance asserted
+first. It is order-dependent, so it can look healthy and then fail.
 
 Do not create a `vercel.json`.
 

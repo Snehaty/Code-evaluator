@@ -4,22 +4,32 @@
  * 🤖 LLM: NO
  * 📡 GitHub API: NO
  *
- * Takes the accumulated state and produces the two structurally separate
- * output artifacts. Also runs the code-in-rationale guardrail (Layer 3).
+ * Produces the two structurally separate output artifacts and runs the
+ * code-in-rationale guardrail (Layer 3). Nothing here can fail: by the time a
+ * run reaches FORMAT the verdicts have already been checked against the
+ * requirement set, so this node packages what it is given.
  */
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 import type { EvidenceBundle, Report } from "@zkcvp/contracts";
-import type { EvaluatorState } from "../state";
+
+import { runContext } from "../context";
 import { containsCode } from "../guardrails/code-detector";
+import type { EvaluatorState, EvaluatorUpdate } from "../state";
 
-const PROMPT_TEMPLATE_VERSION = "v1";
+const PROMPT_TEMPLATE_VERSION = "v2";
 
-export function formatNode(state: EvaluatorState): {
+export type FormatResult = {
   evidence: EvidenceBundle;
   report: Report;
-} {
+};
+
+export function buildArtifacts(
+  state: EvaluatorState,
+  modelId: string,
+): FormatResult {
   const { evaluationId, claimId, toolCallLog, verdicts } = state;
 
-  // Guardrail Layer 3: validate no code in rationale
+  // Guardrail Layer 3: validate no code in rationale.
   const sanitizedVerdicts = verdicts.map((v) => {
     if (containsCode(v.rationale)) {
       return {
@@ -34,18 +44,20 @@ export function formatNode(state: EvaluatorState): {
     return v;
   });
 
-  // Build EvidenceBundle (private — never shown to stakeholder)
+  // Build EvidenceBundle (private — never shown to stakeholder).
   const evidence: EvidenceBundle = {
     evaluationId,
     claimId,
     toolCallLog,
+    planReasoning: state.planReasoning,
+    droppedPaths: state.droppedPaths,
   };
 
-  // Build Report (public — shown to stakeholder immediately)
+  // Build Report (public — shown to stakeholder immediately).
   const report: Report = {
     evaluationId,
     claimId,
-    modelId: state.modelId ?? "gemini-3.5-flash",
+    modelId,
     promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
     createdAt: new Date().toISOString(),
     perRequirement: sanitizedVerdicts.map((v) => ({
@@ -56,4 +68,21 @@ export function formatNode(state: EvaluatorState): {
   };
 
   return { evidence, report };
+}
+
+/**
+ * Graph node wrapper — writes both artifacts into terminal channels.
+ *
+ * They live in state rather than being assembled after the run so that a
+ * streaming consumer sees FORMAT complete like any other node, and so the
+ * finished artifacts are part of the snapshot a checkpointer would capture.
+ */
+export function formatNode(
+  state: EvaluatorState,
+  config: LangGraphRunnableConfig,
+): EvaluatorUpdate {
+  // Resolving the context here keeps `Report.modelId` honest: it names the
+  // model the run actually used, not a constant re-defaulted at the last step.
+  const { modelId } = runContext(config);
+  return buildArtifacts(state, modelId);
 }

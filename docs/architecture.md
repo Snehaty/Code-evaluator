@@ -423,8 +423,14 @@ needed.
 ## Testing
 
 Vitest, integration-first, against real Postgres (`packages/db/tests/harness.ts`). Handlers are
-written after their tests. `packages/orchestrator/tests/**` is excluded — a manual script
-needing live GitHub and LLM credentials, not a collectable test file.
+written after their tests.
+
+The orchestrator's live end-to-end check is `packages/orchestrator/tests/integration-manual.ts`,
+which hits a real repo and a real model. It is kept outside the `*.test.ts` include by its name
+rather than by an exclude rule: the directory-wide exclude it used to need also hid the pure
+unit tests beside it (the code guardrail, the model-output validators, the retry policy), none
+of which touch a network or a database. Run it by hand with
+`GITHUB_TOKEN=... GOOGLE_API_KEY=... npx tsx`.
 
 ### The harness, and what not to undo
 

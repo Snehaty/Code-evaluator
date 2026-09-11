@@ -19,6 +19,13 @@ const schema = z.object({
    * off. Host-configurable precisely because the host is not chosen yet. */
   EVAL_CEILING_SECONDS: z.coerce.number().int().positive().default(300),
 
+  /* Which Gemini model the Evaluator runs. Configuration rather than a
+   * constant so a model can be changed without a deploy, and so
+   * `Report.modelId` names what actually produced the verdicts — a report that
+   * misreports its own model undermines the record it anchors. The provider is
+   * fixed; only the model id varies. */
+  EVAL_MODEL_ID: z.string().min(1).default("gemini-3.5-flash"),
+
   NODE_ENV: z.string().default("development"),
 
   /* Auth.js JWT encryption/signing secret, shared by both instances — the two
