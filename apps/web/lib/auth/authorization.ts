@@ -20,7 +20,7 @@ export async function isStakeholderMember(
   return row !== undefined;
 }
 
-async function isDeveloperMember(
+export async function isDeveloperMember(
   db: Db,
   developerId: string,
   projectId: string,
