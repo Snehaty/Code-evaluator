@@ -66,10 +66,17 @@ describe("isTerminal", () => {
     };
     const done: ClaimFrame = { t: "done", claimId: "c1", evaluationId: "e1" };
 
+    /* Routed through a ClaimFrame-typed parameter on purpose. Comparing the
+     * narrowed const directly is a compile error — TypeScript proving the
+     * invariant — but the runtime assertion is what survives a future in
+     * which the union drifts. */
+    const readsAsDone = (f: ClaimFrame) => f.t === "done";
+
     expect(isTerminal(progress)).toBe(false);
     expect(isTerminal(failed)).toBe(true);
     expect(isTerminal(done)).toBe(true);
-    expect(failed.t === "done").toBe(false);
+    expect(readsAsDone(failed)).toBe(false);
+    expect(readsAsDone(done)).toBe(true);
     expect("claimId" in failed).toBe(false);
   });
 });
