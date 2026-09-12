@@ -119,3 +119,59 @@
     margin-inline: calc(-1 * var(--lg-space-2));
   }
 }
+
+/* -----------------------------------------------------------------------------
+   Claim composer: requirement checkbox label
+
+   Checkbox() renders <label class="lg-check"><input/><span class="lg-check__label">
+   {label}</span></label>, and `.lg-check__label` only ever carried font-size and
+   line-height — it was never asked to grow, because nothing built on it before
+   needed a second thing (a status badge) pinned to the far edge of the same row.
+   Forcing it to fill the row here is layout only: it changes no color, weight, or
+   spacing token the design system owns.
+   ----------------------------------------------------------------------------- */
+.app-claim-req .lg-check__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-claim-req__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-1);
+  width: 100%;
+}
+
+.app-claim-req__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lg-space-3);
+}
+
+.app-claim-req__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -----------------------------------------------------------------------------
+   Claim composer: repeated repo/branch/commit rows
+
+   A rule between entries is the only thing separating "repository 2's branch
+   field" from "repository 1's commit list" once more than one repo is claimed
+   against — without it the picker reads as one long undifferentiated column.
+   ----------------------------------------------------------------------------- */
+.app-claim-repo-entry + .app-claim-repo-entry {
+  padding-top: var(--lg-space-4);
+  border-top: 1px solid var(--lg-rule);
+}
+
+/* CommitList has no built-in height limit — up to 50 rows from
+   listRepoCommits would otherwise push the branch and repo pickers below the
+   fold. Scoped to this scroll wrapper, never to .lg-commit-list itself. */
+.app-claim-commit-scroll {
+  max-height: 16rem;
+  overflow-y: auto;
+}

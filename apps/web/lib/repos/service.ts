@@ -37,7 +37,9 @@ export type AttachedRepo = {
   id: string;
   githubRepoId: string;
   fullName: string;
-  /** GitHub's own default branch at attach time. Not yet consumed by any UI. */
+  /** GitHub's own default branch at attach time. Pre-selects the branch in the
+   * claim composer's commit picker (claims/new/ClaimComposer.tsx) — no extra
+   * GitHub call needed to know it. */
   defaultBranch: string;
   addedAt: Date;
   /** Absolute instant the undo expires. The UI never computes this itself. */

@@ -90,6 +90,17 @@ export default async function ProjectPage({
                 </Button>
               </Link>
             ) : null}
+            {/* Only a developer member submits a claim — it spends their own
+             * GitHub token, same reasoning as the repos page's attach form.
+             * Requirement selection stays off this shared screen; the
+             * composer at claims/new is where that happens. */}
+            {!isStakeholder ? (
+              <Link href={`/projects/${id}/claims/new`}>
+                <Button type="button" tone="primary">
+                  Submit a claim
+                </Button>
+              </Link>
+            ) : null}
           </>
         }
       />
