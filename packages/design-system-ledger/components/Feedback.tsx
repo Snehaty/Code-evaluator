@@ -267,11 +267,35 @@ export function UndoToast({
   );
 }
 
+export type EvaluationPhase = "claim" | "plan" | "gather" | "analyze" | "format";
+
+const PHASE_ORDER: EvaluationPhase[] = ["claim", "plan", "gather", "analyze", "format"];
+
+/**
+ * Each label names what actually happened, traced to the step that produces it.
+ * "Listing" rather than "fetching" for `plan`: it reads the tree and the
+ * commit's changed files, not file contents.
+ */
+const PHASE_LABEL: Record<EvaluationPhase, string> = {
+  claim: "Reading the requirement",
+  plan: "Listing files at the claimed commit",
+  gather: "Agent reading source",
+  analyze: "Forming a judgment",
+  format: "Recording the result",
+};
+
 export interface EvaluationProgressProps {
   /** Seconds elapsed in the held-open request. */
   elapsedSeconds: number;
-  /** The platform's execution ceiling for this deployment. */
+  /** The platform's execution ceiling for this deployment. Never hardcoded. */
   ceilingSeconds: number;
+  /** The step running right now. */
+  phase: EvaluationPhase;
+  /** Every step that has run at least once. May include steps after `phase`. */
+  completed: EvaluationPhase[];
+  filesRead: number;
+  /** Completed gather/analyze rounds. Shown only from round 2. */
+  round: number;
   className?: string;
 }
 
@@ -279,13 +303,19 @@ export interface EvaluationProgressProps {
  * Evaluation in flight.
  *
  * Evaluation runs synchronously inside the request that submits the claim, so
- * the developer's own tab is held open for its full duration. Two rules, both
+ * the developer's own tab is held open for its full duration. Three rules, all
  * about honesty rather than aesthetics:
  *
- *   1. The bar is INDETERMINATE. There is no honest fraction for an LLM
- *      evaluation, and a fabricated percentage is the kind of small lie that
- *      costs a user their trust in everything else on the page.
- *   2. The elapsed clock turns ochre past 70% of the ceiling, so the developer
+ *   1. NO FRACTION, and the interface says so out loud. There is no honest
+ *      percentage for an LLM evaluation, and a fabricated one is the kind of
+ *      small lie that costs a user their trust in everything else on the page.
+ *      The earlier version of this component expressed that by omitting a
+ *      `value` prop; stating it in the copy is stronger.
+ *   2. The marker MOVES BACKWARD, because `gather` and `analyze` repeat. A tick
+ *      means "this has run", which is true — not "this is finished forever",
+ *      which would not be. The round indicator from round 2 onward is what
+ *      makes a backward-moving marker unambiguous rather than alarming.
+ *   3. The elapsed clock turns ochre past 70% of the ceiling, so the developer
  *      is warned BEFORE the request is cut off rather than after. Ochre is this
  *      system's attention colour and is not a verdict colour, so the clock
  *      cannot be misread as a result.
@@ -293,9 +323,14 @@ export interface EvaluationProgressProps {
 export function EvaluationProgress({
   elapsedSeconds,
   ceilingSeconds,
+  phase,
+  completed,
+  filesRead,
+  round,
   className,
 }: EvaluationProgressProps) {
   const nearCeiling = elapsedSeconds > ceilingSeconds * 0.7;
+  const done = new Set(completed);
 
   const mmss = (s: number) =>
     `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -305,20 +340,43 @@ export function EvaluationProgress({
       <div className="lg-eval__head">
         <span className="lg-eval__label">
           <Spinner label="Evaluating" />
-          Reading the pinned commits
+          Agent is reading the code
         </span>
         <span className="lg-eval__clock" data-near-ceiling={nearCeiling || undefined}>
-          {mmss(elapsedSeconds)} / {mmss(ceilingSeconds)}
+          {mmss(elapsedSeconds)}
         </span>
       </div>
 
-      <ProgressBar label="Evaluation in progress" />
+      <ol className="lg-eval__steps">
+        {PHASE_ORDER.map((p) => {
+          const state = p === phase ? "active" : done.has(p) ? "done" : "pending";
+          return (
+            <li key={p} className="lg-eval__step" data-state={state}>
+              <span className="lg-eval__mark" aria-hidden="true" />
+              <span className="lg-eval__step-label">{PHASE_LABEL[p]}</span>
+              {p === phase && round >= 2 && (
+                <span className="lg-eval__round">round {round}</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {filesRead > 0 && (
+        <p className="lg-eval__count">
+          {filesRead} {filesRead === 1 ? "file" : "files"} read
+        </p>
+      )}
 
       <p className="lg-eval__note">
-        {nearCeiling
-          ? "This run is approaching the platform's execution limit. If it is cut off, no verdict is recorded and the claim can be submitted again."
-          : "Keep this tab open. The evaluation runs inside this request, so closing it ends the run before a verdict is recorded."}
+        This runs inside your request. There is no percentage to show:
+        evaluation takes as long as the reading takes, up to a hard limit of{" "}
+        {mmss(ceilingSeconds)}.
       </p>
+
+      <Alert tone="warning">
+        Keep this tab open. Closing it abandons the run and no verdict is recorded.
+      </Alert>
     </div>
   );
 }

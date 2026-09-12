@@ -416,12 +416,18 @@
    Evaluation runs synchronously inside the request that submits the claim, so
    the developer's own tab is held open for its full duration.
 
-   Two rules, both about honesty:
+   Three rules, all about honesty:
 
-     1. The bar is INDETERMINATE. There is no honest fraction for an LLM
-        evaluation, and inventing one to look reassuring is the kind of small
-        lie that costs a user their trust in everything else on the page.
-     2. The elapsed clock turns ochre past 70% of the platform's execution
+     1. NO FRACTION, and the copy says so. There is no honest percentage for an
+        LLM evaluation, and inventing one to look reassuring is the kind of
+        small lie that costs a user their trust in everything else on the page.
+        `.lg-eval__steps` is a checklist of phases that ran, never a meter.
+     2. The marker MOVES BACKWARD: `gather` and `analyze` repeat, so a step
+        already marked `done` can become `active` again. `data-state="active"`
+        and `data-state="done"` are drawn as different marks (see below), not
+        as degrees of the same one, because "running again" is not a regression
+        to explain away.
+     3. The elapsed clock turns ochre past 70% of the platform's execution
         ceiling, so the developer is warned BEFORE the request is cut off rather
         than after. Ochre is this system's attention colour and is not a verdict
         colour, so an amber clock cannot be read as a result.
@@ -461,6 +467,112 @@
 .lg-eval__clock[data-near-ceiling="true"] {
   color: var(--lg-warning);
   font-weight: var(--lg-weight-medium);
+}
+
+/* The checklist. A plain ordered list, because the phases run in a fixed
+   sequence even though the marker can move back through it. */
+.lg-eval__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lg-eval__step {
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-3);
+  font-size: var(--lg-text-200);
+  color: var(--lg-text-muted);
+}
+
+/* `active` gets the loudest ink and weight in the list: it is where the wait
+   is actually happening right now. `done` reads as settled fact, not as
+   emphasis, because it has already receded into the past. */
+.lg-eval__step[data-state="active"] {
+  color: var(--lg-text);
+  font-weight: var(--lg-weight-medium);
+}
+
+.lg-eval__step[data-state="done"] {
+  color: var(--lg-text-secondary);
+}
+
+/* The mark. Three states, three different constructions rather than three
+   colours of the same shape, so the distinction survives greyscale too:
+
+     pending  a bare ring, no fill                    — hasn't run yet
+     active   a pale ring around a solid attention dot — running right now
+     done     a tick in a tinted ring, satisfied-hue    — has run at least once
+
+   `active` is a ring rather than a flat filled dot: `--lg-warning` alone is
+   dark enough in light mode to read as a generic dark dot rather than as the
+   attention hue, and the flat fill also could not be told apart from `done`
+   by shape alone, only by colour. The ring gives it presence at 14px without
+   any value outside the existing warning/satisfied pairs.
+
+   `done` is deliberately built like this system's verdict chip (tinted
+   outline, never a solid fill) rather than invented fresh, because both say
+   the same thing: "true, and settled" — even though a done evaluation step
+   can still run again, which a verdict never does. */
+.lg-eval__mark {
+  position: relative;
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  box-sizing: border-box;
+  border-radius: var(--lg-radius-pill);
+}
+
+.lg-eval__step[data-state="pending"] .lg-eval__mark {
+  border: 1.5px solid var(--lg-rule-strong);
+}
+
+.lg-eval__step[data-state="active"] .lg-eval__mark {
+  border: 1.5px solid var(--lg-warning);
+  background: var(--lg-warning-subtle);
+}
+
+.lg-eval__step[data-state="active"] .lg-eval__mark::after {
+  content: "";
+  position: absolute;
+  inset: 0.2rem;
+  border-radius: var(--lg-radius-pill);
+  background: var(--lg-warning);
+}
+
+.lg-eval__step[data-state="done"] .lg-eval__mark {
+  border: 1.5px solid var(--lg-satisfied);
+  background: var(--lg-satisfied-subtle);
+}
+
+.lg-eval__step[data-state="done"] .lg-eval__mark::after {
+  content: "";
+  position: absolute;
+  left: 0.2rem;
+  top: 0.04rem;
+  width: 0.3rem;
+  height: 0.5rem;
+  border: solid var(--lg-satisfied);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+/* The disambiguator for a marker that moves backward: without it, `gather`
+   ticking back to `active` on round 2 reads as a stall or a bug rather than
+   as the loop the system actually runs. */
+.lg-eval__round {
+  font-family: var(--lg-font-mono);
+  font-size: var(--lg-text-100);
+  color: var(--lg-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-eval__count {
+  font-size: var(--lg-text-100);
+  color: var(--lg-text-muted);
 }
 
 .lg-eval__note {

@@ -114,6 +114,7 @@ export type {
   AlertProps,
   UndoToastProps,
   EvaluationProgressProps,
+  EvaluationPhase,
 } from "./Feedback";
 
 export { Tabs, Breadcrumb, SideNav, SideNavSection, NavItem } from "./Nav";

@@ -99,11 +99,18 @@ export function FeedbackSection() {
 
       <Spec
         name="Evaluation in flight"
-        api="EvaluationProgress elapsedSeconds= ceilingSeconds="
-        note="Evaluation runs synchronously inside the request that submits the claim, so the developer's own tab is held open for its full duration. The bar is indeterminate because there is no honest fraction for an LLM evaluation, and the clock turns ochre past 70% of the ceiling so the developer is warned before the request is cut off rather than after. Ochre is the attention colour and is not a verdict colour, so the clock cannot be misread as a result."
+        api="EvaluationProgress elapsedSeconds= ceilingSeconds= phase= completed= filesRead= round="
+        note="Evaluation runs synchronously inside the request that submits the claim, so the developer's own tab is held open for its full duration. There is no percentage, and the copy says so, because there is no honest fraction for an LLM evaluation. This specimen pins the mid-run loop case: phase gather with round 2, because gather and analyze repeat, so the marker for a step already ticked can become active again. A tick means a step has run, not that it is finished forever, and the round indicator is what keeps a marker moving backward from reading as alarming. The clock turns ochre past 70% of the ceiling so the developer is warned before the request is cut off rather than after."
         layout="block"
       >
-        <EvaluationProgress elapsedSeconds={elapsed} ceilingSeconds={60} />
+        <EvaluationProgress
+          elapsedSeconds={elapsed}
+          ceilingSeconds={60}
+          phase="gather"
+          completed={["claim", "plan", "analyze"]}
+          round={2}
+          filesRead={19}
+        />
       </Spec>
 
       <Spec
