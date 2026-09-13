@@ -15,8 +15,8 @@ document and those disagree about a rule, they win.
 | Magic-link delivery | Console transport behind a `MagicLinkSender` seam. No external provider |
 | Tests | Vitest, integration-first against real Postgres |
 
-Still deliberately open: the deployment host, the Transparency Log backend, claim-submission
-request/response shape, evidence disclosure.
+Still deliberately open: the Transparency Log backend, claim-submission request/response shape,
+evidence disclosure.
 
 ### Why Next 15, pinned exact
 
@@ -132,7 +132,8 @@ reachable case needs no role confusion at all: any member opening
 `/requirements/<stale-or-mistyped-id>` gets `ServiceError(404)` from `loadRequirement` and
 the same generic framework error page. The project owner decided not to address this in M4.
 
-Next: **M5 — Remaining checklist screens.**
+Next: **the Transparency Log** — the only piece of `docs/plans/03-claim-submission.md` not
+yet built.
 
 ---
 
@@ -405,13 +406,39 @@ Display rules, all already encoded in the Ledger components:
 
 ---
 
+## M6 — Repo attachment and claim submission
+
+Plan 02 and plan 03 land together, completing the web app short of the Transparency Log.
+
+Repo attachment: six endpoints under `/api/projects/:projectId/repos`, `packages/github`
+gains `listUserRepos`, `listBranches`, and `listCommits`, and `/projects/[id]/repos` lets a
+developer attach a repo picked from what their own GitHub account can already see, with a
+60-second undo.
+
+Claim submission: five tables — `claims`, `claim_repos`, `claim_requirement_versions`,
+`evaluations`, `verdicts`. `POST /api/projects/:projectId/claims` validates the request,
+opens a transaction writing `claims` + `claim_repos` + `claim_requirement_versions`, then
+streams newline-delimited JSON: progress frames from `evaluateStream()`, followed by exactly
+one terminal frame, `done` or `failed`. A `done` frame is written only once a second
+transaction has recorded `evaluations`, `verdicts`, and the `requirement_versions.status`
+write-back together; a thrown evaluation writes none of the three, so a failure never leaves
+a status behind. `GET /api/claims/:id` returns a claim, its pinned commits, and its
+verdicts — never the evidence bundle, which is stored and hashed (`evidence_hash`, a
+SHA-256 over canonical JSON) but returned by nothing.
+
+Screens: `/projects/[id]/claims/new` composes a claim and watches it run; `/claims/[id]`
+shows verdicts, pinned commits, and a withheld-evidence affordance; `/requirements/[id]`
+folds the latest verdict into its Timeline.
+
+---
+
 ## Host-agnostic guarantees
 
 The deployment host is Vercel as of 2026-08-18. The guarantees below were kept rather than
 spent: no `vercel.json`, no Vercel primitives, no edge runtime, and `output: 'standalone'`
 still emits a runnable Node server. Moving to a long-lived Node host stays a redeploy, not
-a rewrite — which matters most when the Evaluator lands, since a serverless request ceiling
-can truncate a run that a long-lived host would finish.
+a rewrite — which matters because Vercel's function limit is 60 seconds on the current plan
+and can truncate a run that a long-lived host would finish.
 
 | Concern | Commitment |
 |---|---|
@@ -422,7 +449,7 @@ can truncate a run that a long-lived host would finish.
 | Vercel primitives | None. No `waitUntil`, no `@vercel/blob`, no `vercel.json` crons |
 | Middleware | Unauthenticated redirects only |
 | Evaluator | A plain `async` function behind the `Evaluator` interface; the route handler is a thin adapter |
-| Execution ceiling | `EVAL_CEILING_SECONDS`, read at runtime. Feeds `EvaluationProgress`'s `ceilingSeconds` |
+| Execution ceiling | `EVAL_CEILING_SECONDS`, read at runtime. 60 on Vercel (its function limit on the current plan); default 300 otherwise. Feeds `EvaluationProgress`'s `ceilingSeconds` |
 
 Accepted consequence: Vercel Cron and edge-middleware performance are unavailable. Neither is
 needed.
@@ -499,8 +526,6 @@ is where the `eval_failed` display rule is actually enforced.
 
 ## Out of scope
 
-Repo attachment (`docs/plans/02`), claim submission, the Evaluator's internals, the
-Transparency Log, stakeholder-invite endpoint or UI, un-archiving, evidence disclosure.
-
-No surface may present real verdict output as if produced by the Evaluator — it does not exist
-yet.
+Repo attachment (`docs/plans/02`), claim submission, the Transparency Log, stakeholder-invite
+endpoint or UI, un-archiving, evidence disclosure. The Evaluator itself — see
+`docs/orchestrator.md`.

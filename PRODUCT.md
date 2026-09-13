@@ -10,12 +10,12 @@ web
 
 Committed in `README.md` before this record existed: Next.js (TypeScript) as one app carrying
 UI, CRUD API, and the orchestrator entrypoint; Postgres for all relational state; LangGraph
-(TypeScript) for the Evaluator with the LLM provider left configurable; a single deployable.
-The *host* for that deployable is deliberately undecided — serverless (Vercel-class) and a
-long-lived Node host are both live options, and the app is built host-agnostic so the choice
-can be made late. The scaffold now exists as an npm workspace: `apps/web` (Next.js) plus
-`packages/contracts`, `packages/db`, `packages/orchestrator`, and
-`packages/design-system-ledger`.
+(TypeScript) for the Evaluator, calling Gemini — the provider is fixed, not configurable; only
+the model id is, via `EVAL_MODEL_ID`; a single deployable. The *host* is Vercel. The
+host-agnostic guarantees the app was built with were kept rather than spent, so a move to a
+long-lived Node host remains a redeploy, not a rewrite. The scaffold now exists as an npm
+workspace: `apps/web` (Next.js) plus `packages/contracts`, `packages/db`,
+`packages/orchestrator`, and `packages/design-system-ledger`.
 
 ## Users
 
@@ -66,11 +66,11 @@ Conflating those two is the single most damaging thing any surface could do.
   runs **synchronously inside the request that submits the claim**. The developer's own browser
   holds that request open. This follows from token custody, not from the runtime, so it holds on
   any host.
-- How much Evaluator work fits in one submission depends on the deployment host, which is not
-  yet chosen: a serverless platform caps it at that request's execution-time ceiling, a
-  long-lived Node host does not cap it at all. Until that is settled, no surface may promise a
-  bound on how long an evaluation takes, and the in-flight experience must tolerate a wait of
-  minutes.
+- How much Evaluator work fits in one submission depends on the deployment host. The host is
+  Vercel, whose function limit is 60 seconds on the current plan, so `EVAL_CEILING_SECONDS` is
+  60 there; the default stays 300 for a long-lived Node host, which caps nothing. No surface may
+  promise a bound tighter than the ceiling in force, and the in-flight experience must tolerate
+  a wait up to that limit.
 - A claim pins one requirement version set plus one or more `(repo, commit SHA)` pairs. The
   Evaluator reads those exact SHAs, never live HEAD.
 - The Evaluator returns two structurally separate artifacts: an **evidence bundle** (raw tool-call
@@ -93,8 +93,8 @@ Conflating those two is the single most damaging thing any surface could do.
 - A report's `rationale` must never embed verbatim source code — file paths and line ranges are
   fine. This is a **generation-time constraint on the agent**, not a display-layer filter.
 - Deliberately undecided: claim submission and verification invocation (request/response shape,
-  mid-run rate-limit handling, in-flight UI); the deployment host; the transparency log backend;
-  the auth library; any evidence-disclosure feature.
+  mid-run rate-limit handling, in-flight UI); the transparency log backend; the auth library;
+  any evidence-disclosure feature.
 - **This build is a portfolio and demo piece.** Confirmed with the user: realistic placeholder
   content is acceptable and narrative clarity outranks exhaustive edge-case coverage. It does
   not license invented customers, metrics, or endorsements — see Evidence on Hand.
@@ -128,8 +128,7 @@ Real, in-repo:
 
 Absent, and **must not be fabricated**: customers, testimonials, case studies, logos, press,
 pricing, licensing, uptime or accuracy benchmarks, evaluation-quality metrics, user counts, and
-any deployment claim. There is no running deployment. The Evaluator does not exist yet, so no
-surface may present real verdict output as if produced by it.
+any deployment claim. There is no running deployment.
 
 ## Product Principles
 

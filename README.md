@@ -124,7 +124,7 @@ flowchart LR
 |---|---|
 | Requirement management (projects, RBAC, checklist + versioning) | Designed — `docs/plans/01-requirement-management.md` |
 | Repo attachment & commit visibility | Designed — `docs/plans/02-repo-attachment.md` |
-| Claim submission & verification invocation | Not yet designed |
+| Claim submission & verification invocation | Designed and built — `docs/plans/03-claim-submission.md` |
 | LangGraph Evaluator | Black-boxed — contract below, internals deferred |
 | Transparency Log | Black-boxed — contract below, backend choice deferred |
 | Application foundation (workspace, scaffold, contracts, schema) | Built — see `docs/architecture.md` |

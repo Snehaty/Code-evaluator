@@ -185,28 +185,42 @@ permission failure, and only the response headers tell them apart.
 was checked against the tree first, so an unresolved failure means a file we know exists and
 couldn't read. A verdict over that gap wouldn't be sound.
 
-**A verdict is a 200. A failure never is.** The route maps each error kind to its own status —
-401, 429 (with `retryAt`), 404, 503, 422, 504, 400. None of them can be mistaken for a completed
-evaluation that returned `not_satisfied`.
+**A verdict is a `done` frame. A failure is a `failed` frame. Never both, never neither.**
+Streaming spends the HTTP status code before the outcome is known, so the original rule — a
+verdict is a 200, a failure never is — is restated in its streaming form; see
+`docs/plans/03-claim-submission.md`. What it protects is unchanged: an infrastructure failure
+must never reach a stakeholder as "Not satisfied". The error-kind-to-status mapping survives
+intact — 401, 429 (with `retryAt`), 404, 503, 422, 504, 400 — it now populates `failed.status`
+instead of the response line, so none of them can be mistaken for a completed evaluation that
+returned `not_satisfied`.
 
 ---
 
 ## 9. How the app calls it
 
-`apps/web/app/api/test-evaluate/route.ts` is the only caller today:
+`POST /api/projects/:projectId/claims` is the caller:
 
-1. `requireDeveloper()` → session with the GitHub token
-2. Validate the body
-3. Work out the deadline from `EVAL_CEILING_SECONDS`
-4. `createGitHubReadTool(token, { deadline, signal })`
-5. `evaluate()`
-6. Return the report; the evidence is only summarised, never sent
+1. `requireSession()`, then validate the body and confirm every `requirementVersionId` and
+   `projectRepoId` — each of these still keeps a true HTTP status code, since all of it runs
+   before a byte of the response is written.
+2. `createClaim()` writes the pre-evaluation transaction (`claims` + `claim_repos` +
+   `claim_requirement_versions`) and returns the pinned commits and requirements.
+3. Work out the deadline from `EVAL_CEILING_SECONDS`, then
+   `createGitHubReadTool(token, { deadline, signal })`.
+4. `evaluateStream()` — the route sends one `progress` frame per node the generator yields,
+   then reads the two returned artifacts once it is done.
+5. `recordEvaluation()` writes `evaluations`, `verdicts`, and the
+   `requirement_versions.status` write-back together, in one transaction, only once both
+   artifacts exist.
+6. Send the terminal frame — `done` with the claim and evaluation id, or `failed` if anything
+   above threw — and close the stream. The evidence bundle is persisted by `recordEvaluation`;
+   no frame and no response ever carries it.
 
 The token goes session → tool → GitHub, and nowhere else. `GitHubReadToolImpl` uses plain
 `fetch` (no SDK), and always reads at the claimed commit SHA rather than live HEAD.
 
-`evaluateStream()` is also available. It reports progress per node for a UI that wants to show
-the run happening, but the artifacts still arrive once, at the end.
+See `docs/plans/03-claim-submission.md` for the frame protocol and the full request
+contract.
 
 ---
 
@@ -240,8 +254,9 @@ GITHUB_TOKEN=... GOOGLE_API_KEY=... npx tsx packages/orchestrator/tests/integrat
 
 ## 12. Not built yet
 
-- **Persistence.** There are no `claims`, `evaluations`, or `reports` tables. The evidence bundle
-  is returned in a response and dropped. The transparency log has nothing to hash yet.
+- **The Transparency Log.** `evaluations.evidence_hash` (SHA-256 over canonical JSON of the
+  evidence bundle) is computed and stored at write time, ready to anchor — but there is no log
+  to append it to yet, and no `verify()` a stakeholder could call.
 - **A measure of quality.** No reference set, no comparison against human judgment, no
   regression suite. `modelId` and `promptTemplateVersion` exist so verdicts stay attributable
   when that work starts, but today there's no answer to "is it any good".

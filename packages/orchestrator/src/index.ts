@@ -1,8 +1,5 @@
 export { LangGraphEvaluator, type EvaluationProgress } from "./evaluator";
 
-// Re-export the stub for backwards compat / tests
-export { StubEvaluator } from "./stub";
-
 // Bounds and pure helpers, exported so callers and tests can assert against the
 // same values the graph runs on rather than restating them.
 export {
