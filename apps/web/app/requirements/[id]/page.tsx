@@ -9,12 +9,14 @@ import {
   CardHeader,
   ICON_MD,
   IconNew,
+  Mono,
   PageHeader,
   Section,
   SectionHeading,
   StatusBadge,
   Timeline,
   TimelineItem,
+  VerdictBadge,
   VersionPill,
 } from "@zkcvp/design-system-ledger/components";
 import { getDb } from "../../../lib/db";
@@ -43,7 +45,11 @@ export default async function RequirementPage({
    * stakeholder-only. */
   const session = await requireSession();
   const db = getDb();
-  const { requirement, versionHistory } = await getRequirement(db, session, id);
+  const { requirement, versionHistory, latestVerdict } = await getRequirement(
+    db,
+    session,
+    id,
+  );
 
   /* Only for the trail. `getRequirement` already proved membership of this
    * project, so this cannot widen what the visitor can reach — it re-reads a row
@@ -147,6 +153,47 @@ export default async function RequirementPage({
             <p className="lg-prose">{requirement.description}</p>
           </CardBody>
         </Card>
+
+        {/* Only once the current version has actually been evaluated — a
+            version at `new` has no row here at all, and this is a report on
+            a real outcome, not a placeholder for one. Reuses the same
+            Timeline/TimelineItem pair as Version history below rather than a
+            one-off card, so a single verdict and a run of them read as the
+            same kind of thing when this grows a real history later. The
+            marker stays the neutral IconNew, matching Version history's own
+            reasoning: VerdictBadge already says what happened, and a second
+            status-coded glyph would encode it twice. */}
+        {latestVerdict ? (
+          <Section>
+            <SectionHeading>Latest verdict</SectionHeading>
+            <Timeline label="Latest verdict">
+              <TimelineItem
+                marker={<IconNew size={ICON_MD} />}
+                title={<VerdictBadge verdict={latestVerdict.verdict} />}
+                meta={
+                  <time dateTime={latestVerdict.createdAt.toISOString()}>
+                    {dateTimeFormat.format(latestVerdict.createdAt)}
+                  </time>
+                }
+              >
+                {/* Prose only. A rationale cites file paths and line ranges
+                    and never contains source code — the Evaluator enforces
+                    that at generation time, so this renders it verbatim with
+                    no display-layer filtering of its own. `lg-prose`, the
+                    same class the requirement description above uses. */}
+                <p className="lg-prose">{latestVerdict.rationale}</p>
+                <p className="lg-caption">
+                  Evaluated by <Mono>{latestVerdict.modelId}</Mono>
+                </p>
+                {/* The claim that produced this verdict — the pinned commits
+                    and, on that page, the sealed evidence digest. */}
+                <Link href={`/claims/${latestVerdict.claimId}`}>
+                  View the claim that produced this verdict
+                </Link>
+              </TimelineItem>
+            </Timeline>
+          </Section>
+        ) : null}
 
         {/* Only once there is a history to show. At v1 the single entry
             repeats the card above it line for line — same title, same

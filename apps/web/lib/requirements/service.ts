@@ -1,11 +1,13 @@
 // apps/web/lib/requirements/service.ts
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import {
+  evaluations,
   requirementVersions,
   requirements,
+  verdicts,
   type Db,
 } from "@zkcvp/db";
-import type { RequirementStatus } from "@zkcvp/contracts";
+import type { RequirementStatus, Verdict } from "@zkcvp/contracts";
 import { isProjectMember } from "../auth/authorization";
 import type { Session } from "../auth/types";
 import { forbidden, notFound } from "../api/errors";
@@ -147,7 +149,11 @@ export async function getRequirement(
   db: Db,
   session: Session,
   requirementId: string,
-): Promise<{ requirement: RequirementView; versionHistory: VersionView[] }> {
+): Promise<{
+  requirement: RequirementView;
+  versionHistory: VersionView[];
+  latestVerdict: LatestVerdict | null;
+}> {
   const requirement = await loadRequirement(db, requirementId);
 
   if (!(await isProjectMember(db, session, requirement.projectId))) {
@@ -167,5 +173,55 @@ export async function getRequirement(
     .where(eq(requirementVersions.requirementId, requirementId))
     .orderBy(asc(requirementVersions.versionNumber));
 
-  return { requirement, versionHistory };
+  /* Against the CURRENT version only — that is what the status badge above
+   * already reports on, and what the stakeholder reading this page is asking
+   * about right now. A superseded version keeps whatever verdict it was
+   * evaluated against, but this page does not surface it. */
+  const latestVerdict = await latestVerdictFor(db, requirement.currentVersionId);
+
+  return { requirement, versionHistory, latestVerdict };
+}
+
+export type LatestVerdict = {
+  verdict: Verdict;
+  rationale: string;
+  modelId: string;
+  createdAt: Date;
+  claimId: string;
+};
+
+/**
+ * The most recent verdict against one requirement version, or null if it has
+ * never been evaluated.
+ *
+ * Ordered and limited to one by `evaluations.createdAt` — the Evaluator's own
+ * timestamp for when the report was produced, not any row-insertion order —
+ * because a version can be claimed and re-evaluated any number of times
+ * (recordEvaluation's re-evaluation is symmetric) and only the newest verdict
+ * belongs on the requirement page. The index added in Task 1
+ * (`verdicts_requirement_version_idx`) serves the filter this join runs.
+ *
+ * Selects only what a stakeholder or developer may see: never
+ * `evaluations.evidence`, which holds verbatim private source and must never
+ * be selected by any query outside the claim's own evidence path.
+ */
+export async function latestVerdictFor(
+  db: Db,
+  requirementVersionId: string,
+): Promise<LatestVerdict | null> {
+  const [row] = await db
+    .select({
+      verdict: verdicts.verdict,
+      rationale: verdicts.rationale,
+      modelId: evaluations.modelId,
+      createdAt: evaluations.createdAt,
+      claimId: evaluations.claimId,
+    })
+    .from(verdicts)
+    .innerJoin(evaluations, eq(evaluations.id, verdicts.evaluationId))
+    .where(eq(verdicts.requirementVersionId, requirementVersionId))
+    .orderBy(desc(evaluations.createdAt))
+    .limit(1);
+
+  return row ?? null;
 }
