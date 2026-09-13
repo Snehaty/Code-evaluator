@@ -158,16 +158,37 @@ export function ClaimComposer({
       commitsError: null,
       commitsLoading: true,
     });
-    const result = await boundListCommits(repoId, ref);
-    replaceEntry(key, (e) => {
-      /* Stale-response guard: the developer may have switched repo or branch
-       * again while this request was in flight. */
-      if (e.repoId !== repoId || e.branch !== ref) return e;
-      if (result.status === "error") {
-        return { ...e, commitsLoading: false, commitsError: result.message };
-      }
-      return { ...e, commitsLoading: false, commits: result.commits };
-    });
+    try {
+      const result = await boundListCommits(repoId, ref);
+      replaceEntry(key, (e) => {
+        /* Stale-response guard: the developer may have switched repo or branch
+         * again while this request was in flight. */
+        if (e.repoId !== repoId || e.branch !== ref) return e;
+        if (result.status === "error") {
+          return { ...e, commitsError: result.message };
+        }
+        return { ...e, commits: result.commits };
+      });
+    } catch {
+      /* boundListCommits/listCommitsAction rethrows anything that isn't a
+       * ServiceError (a session that expired mid-request, for one). Left
+       * uncaught, this handler — fired from onChange, awaited by nobody —
+       * would become an unhandled rejection and strand the picker on
+       * "Loading commits…" forever, with no error and no way out but a
+       * reload. A generic message is right here: a rethrown non-ServiceError
+       * has no user-meaningful text. */
+      replaceEntry(key, (e) =>
+        e.repoId === repoId && e.branch === ref
+          ? { ...e, commitsError: "Something went wrong. Try again." }
+          : e,
+      );
+    } finally {
+      /* Cleared on every path — success, a returned error, and a thrown one —
+       * so the loading state can never outlive the request that set it. */
+      replaceEntry(key, (e) =>
+        e.repoId === repoId && e.branch === ref ? { ...e, commitsLoading: false } : e,
+      );
+    }
   }
 
   async function handleRepoChange(key: string, repoId: string) {
@@ -183,27 +204,37 @@ export function ClaimComposer({
     });
     if (!repoId) return;
 
-    const result = await boundListBranches(repoId);
-    if (result.status === "error") {
+    let resolvedBranch: string | null = null;
+    try {
+      const result = await boundListBranches(repoId);
+      if (result.status === "error") {
+        replaceEntry(key, (e) => (e.repoId === repoId ? { ...e, branchesError: result.message } : e));
+        return;
+      }
+
+      /* Pre-selects the repo's own default branch — no extra GitHub call,
+       * since AttachedRepo.defaultBranch is already known from the server
+       * props. */
+      const repo = repos.find((r) => r.id === repoId);
+      const names = result.branches.map((b) => b.name);
+      resolvedBranch = names.includes(repo?.defaultBranch ?? "")
+        ? (repo!.defaultBranch as string)
+        : (names[0] ?? "");
+
       replaceEntry(key, (e) =>
-        e.repoId === repoId ? { ...e, branchesLoading: false, branchesError: result.message } : e,
+        e.repoId === repoId ? { ...e, branches: result.branches, branch: resolvedBranch! } : e,
+      );
+    } catch {
+      /* Same reasoning as handleBranchChange's catch: an uncaught rethrow
+       * here (e.g. an expired session) would otherwise strand this row on
+       * "Loading branches…" with no error and no retry affordance. */
+      replaceEntry(key, (e) =>
+        e.repoId === repoId ? { ...e, branchesError: "Something went wrong. Try again." } : e,
       );
       return;
+    } finally {
+      replaceEntry(key, (e) => (e.repoId === repoId ? { ...e, branchesLoading: false } : e));
     }
-
-    /* Pre-selects the repo's own default branch — no extra GitHub call, since
-     * AttachedRepo.defaultBranch is already known from the server props. */
-    const repo = repos.find((r) => r.id === repoId);
-    const names = result.branches.map((b) => b.name);
-    const resolvedBranch = names.includes(repo?.defaultBranch ?? "")
-      ? (repo!.defaultBranch as string)
-      : (names[0] ?? "");
-
-    replaceEntry(key, (e) =>
-      e.repoId === repoId
-        ? { ...e, branchesLoading: false, branches: result.branches, branch: resolvedBranch }
-        : e,
-    );
 
     if (resolvedBranch) {
       await handleBranchChange(key, repoId, resolvedBranch);
@@ -368,12 +399,7 @@ function RepoEntryFields({
       </Field>
 
       {entry.repoId && (
-        <Field
-          label="Branch"
-          required
-          help="Defaults to the repository's default branch."
-          error={entry.branchesError ?? undefined}
-        >
+        <Field label="Branch" required help="Defaults to the repository's default branch.">
           {({ id, describedBy, invalid }) =>
             entry.branchesLoading ? (
               <p className="lg-caption">Loading branches…</p>

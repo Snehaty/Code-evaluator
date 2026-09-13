@@ -78,27 +78,38 @@ export function useClaimStream() {
       };
 
       try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const decoded = decodeFrames(rest + decoder.decode(value, { stream: true }));
-          rest = decoded.rest;
-          for (const frame of decoded.frames) {
-            apply(frame);
-            if (isTerminal(frame)) return;
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const decoded = decodeFrames(rest + decoder.decode(value, { stream: true }));
+            rest = decoded.rest;
+            for (const frame of decoded.frames) {
+              apply(frame);
+              if (isTerminal(frame)) return;
+            }
           }
+          /* The stream ended with no terminal frame — the connection dropped or
+           * the host cut the request. Never report this as a verdict. */
+          setRun({
+            status: "failed",
+            message: "The connection ended before a verdict was recorded. Submit the claim again.",
+          });
+        } catch {
+          setRun({
+            status: "failed",
+            message: "The run was interrupted before a verdict was recorded.",
+          });
         }
-        /* The stream ended with no terminal frame — the connection dropped or
-         * the host cut the request. Never report this as a verdict. */
-        setRun({
-          status: "failed",
-          message: "The connection ended before a verdict was recorded. Submit the claim again.",
-        });
-      } catch {
-        setRun({
-          status: "failed",
-          message: "The run was interrupted before a verdict was recorded.",
-        });
+      } finally {
+        /* Every exit above — the early return on a terminal frame, the
+         * fall-through with no terminal frame, and the catch — leaves this
+         * reader locked to the body otherwise. A developer who submits, fails,
+         * and retries repeatedly must not accumulate locked readers and
+         * lingering connections against the per-origin limit. Cancelling an
+         * already-closed/errored reader is a no-op; the empty catch is only
+         * for that redundant case. */
+        reader.cancel().catch(() => {});
       }
     },
     [],
