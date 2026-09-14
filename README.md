@@ -60,7 +60,7 @@ Nothing reads a root `.env` — see the comment in `.env.example` for why.
 | Developer auth & repo access | GitHub OAuth, requesting `repo` scope — one token serves both developer identity and all repo reads. No GitHub App, no installation, no service-level credential anywhere in this design. |
 | Stakeholder auth | Email magic link — no shared password auth with developers |
 | Token custody | Held only in the developer's session, never persisted to a table — a deliberate choice, not a limitation; see below |
-| Deployment | Single deployable, host deliberately undecided — built host-agnostic (standalone Node output). Serverless (Vercel-class) and a long-lived Node host (Railway/Render/Fly-class) are both live options; see below |
+| Deployment | Single deployable on Vercel, built host-agnostic (standalone Node output) — the host-agnostic guarantees were kept rather than spent, so a move to a long-lived Node host (Railway/Render/Fly-class) remains a redeploy, not a rewrite; see below |
 
 Resolved constraint from an earlier design pass: since repo reads are authenticated as
 the requesting developer's own live token rather than a stored service credential,
@@ -68,15 +68,14 @@ evaluation runs **synchronously**, inside the same request that submits a claim 
 background job, no queue, no persisted third-party credential to leak in a DB breach.
 That reasoning is about token custody, not about the runtime, so it holds on any host.
 
-What the host *does* decide is how much Evaluator work fits into one submission. On a
-serverless platform, total work is capped by that request's execution-time ceiling —
-low hundreds of seconds, platform- and plan-dependent. On a long-lived Node host there
-is no such ceiling. A batched LangGraph run doing multi-turn file reads across several
-commits is plausibly minutes-scale, so the difference is not theoretical — but it is a
-*deployment-target* choice, not a framework one. The app is built not to care: the
-orchestrator sits behind a clean entrypoint and the build emits a standalone Node
-server, so moving between the two is a host swap rather than a rewrite. The choice gets
-made once a real Evaluator run has been measured against a real repo.
+What the host *does* decide is how much Evaluator work fits into one submission. On Vercel,
+total work is capped by that request's execution-time ceiling — 60 seconds on the current
+plan, via `EVAL_CEILING_SECONDS`. A long-lived Node host imposes no such ceiling, so the
+variable defaults to 300 there instead. A batched LangGraph run doing multi-turn file reads
+across several commits is plausibly minutes-scale, so the difference is not theoretical —
+but it is a *deployment-target* choice, not a framework one. The app is built not to care
+which applies: the orchestrator sits behind a clean entrypoint and the build emits a
+standalone Node server, so moving between the two is a host swap rather than a rewrite.
 
 ## System components
 
@@ -125,14 +124,18 @@ flowchart LR
 | Requirement management (projects, RBAC, checklist + versioning) | Designed — `docs/plans/01-requirement-management.md` |
 | Repo attachment & commit visibility | Designed — `docs/plans/02-repo-attachment.md` |
 | Claim submission & verification invocation | Designed and built — `docs/plans/03-claim-submission.md` |
-| LangGraph Evaluator | Black-boxed — contract below, internals deferred |
+| LangGraph Evaluator | Built — internals documented in `docs/orchestrator.md` |
 | Transparency Log | Black-boxed — contract below, backend choice deferred |
 | Application foundation (workspace, scaffold, contracts, schema) | Built — see `docs/architecture.md` |
 
 ## Black-box contracts
 
-Both of the following are treated as black boxes on purpose: what each stage must
-achieve is settled; how is deliberately not, until the rest of the app exists end-to-end.
+The Transparency Log below is still treated as a black box on purpose: what it must achieve
+is settled; how is deliberately not, until the rest of the app exists end-to-end. The
+LangGraph Evaluator was treated the same way during design. It is now built; its internals
+are documented in `docs/orchestrator.md`, and how the app invokes it is in
+`docs/plans/03-claim-submission.md`. The contract below is unchanged by that work — it is
+still what the Evaluator must produce, not a description of its internals.
 
 ### LangGraph Evaluator
 
@@ -195,8 +198,8 @@ every evaluation — this is what keeps the stakeholder-facing side of the produ
 functioning at all. The evidence bundle is the only thing withheld, and only because no
 disclosure feature exists yet, not because of any consent mechanism on the report itself.
 
-Not specified here: agent graph structure, prompting strategy, model choice, tool
-implementation, retry/error handling.
+See `docs/orchestrator.md` for the agent graph structure, prompting strategy, model choice,
+tool implementation, and retry/error handling.
 
 ### Transparency Log
 
@@ -227,14 +230,8 @@ library.
 
 ## Open questions
 
-- Claim/verification invocation design — the queue/background-job question is now
-  resolved (synchronous, no queue), but request/response shape, error handling for a
-  mid-run GitHub rate-limit or failure, and in-flight UI are still open.
 - Future evidence-disclosure feature: a developer-consented way to reveal specific
   evidence-bundle contents to a stakeholder on request. Not designed, deliberately deferred.
-- Deployment host — serverless vs. long-lived Node. Deferred until a real Evaluator run
-  is measured against a real repo; the app is built host-agnostic so the answer changes
-  a deployment target, not the architecture.
 - Transparency Log backend choice (Rekor vs. self-hosted Trillian vs. hand-rolled MMR).
 - ~~Auth implementation~~ — resolved: Auth.js v5, two separate instances (GitHub with no
   adapter; email magic link with a stakeholders-only adapter). See `docs/architecture.md`.

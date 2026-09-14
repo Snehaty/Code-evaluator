@@ -526,6 +526,5 @@ is where the `eval_failed` display rule is actually enforced.
 
 ## Out of scope
 
-Repo attachment (`docs/plans/02`), claim submission, the Transparency Log, stakeholder-invite
-endpoint or UI, un-archiving, evidence disclosure. The Evaluator itself — see
-`docs/orchestrator.md`.
+The Transparency Log, stakeholder-invite endpoint or UI, un-archiving, evidence disclosure.
+The Evaluator itself — see `docs/orchestrator.md`.
