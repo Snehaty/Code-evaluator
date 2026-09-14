@@ -59,10 +59,10 @@ export function useClaimStream() {
             prev.status === "running"
               ? {
                   ...prev,
-                  phase: frame.phase as EvaluationPhase,
-                  completed: prev.completed.includes(frame.phase as EvaluationPhase)
+                  phase: frame.phase,
+                  completed: prev.completed.includes(frame.phase)
                     ? prev.completed
-                    : [...prev.completed, frame.phase as EvaluationPhase],
+                    : [...prev.completed, frame.phase],
                   filesRead: frame.filesRead,
                   round: frame.round,
                 }

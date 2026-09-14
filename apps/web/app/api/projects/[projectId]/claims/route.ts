@@ -1,8 +1,14 @@
 // apps/web/app/api/projects/[projectId]/claims/route.ts
 import { z } from "zod";
-import { EvaluationError, type EvaluationErrorKind } from "@zkcvp/contracts";
+import {
+  EvaluationError,
+  type EvaluationErrorKind,
+  type EvaluatorInput,
+  type EvidenceBundle,
+  type Report,
+} from "@zkcvp/contracts";
 import { createGitHubReadTool } from "@zkcvp/github/read-tool";
-import { LangGraphEvaluator } from "@zkcvp/orchestrator";
+import { LangGraphEvaluator, type EvaluationProgress } from "@zkcvp/orchestrator";
 import { encodeFrame, type ClaimFrame } from "../../../../../lib/claims/frames";
 import { createClaim, recordEvaluation } from "../../../../../lib/claims/service";
 import { errorResponse } from "../../../../../lib/api/respond";
@@ -41,9 +47,29 @@ const STATUS_BY_KIND: Record<EvaluationErrorKind, number> = {
   invalid_input: 400,
 };
 
+/**
+ * The one method this route needs off `LangGraphEvaluator`.
+ *
+ * Injected so tests never run a real LangGraph evaluation — the same shape as
+ * `RepoLister` in `lib/repos/service.ts`. Production passes the real
+ * evaluator.
+ */
+export type ClaimEvaluator = {
+  evaluateStream(
+    input: EvaluatorInput,
+  ): AsyncGenerator<EvaluationProgress, { evidence: EvidenceBundle; report: Report }>;
+};
+
+/* Not exported: Next.js's generated route typing (`.next/types`) asserts that
+ * a route module's only VALUE exports are the recognised handler/config
+ * names, and rejects anything else — `ClaimEvaluator` above survives that
+ * check only because a type-only export is erased before Next ever sees it. */
+const liveEvaluator: ClaimEvaluator = new LangGraphEvaluator();
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ projectId: string }> },
+  evaluator: ClaimEvaluator = liveEvaluator,
 ) {
   const db = getDb();
 
@@ -79,7 +105,6 @@ export async function POST(
       let evaluationId: string;
       try {
         const github = createGitHubReadTool(token, { deadline, signal: req.signal });
-        const evaluator = new LangGraphEvaluator();
 
         const run = evaluator.evaluateStream({
           claim: { claimId: claim.claimId, repoCommits: claim.repoCommits },
@@ -122,11 +147,24 @@ export async function POST(
                 status: 500,
                 message: "The evaluation could not be completed.",
               };
+        /* Closed, not errored: `controller.error()` right after `enqueue()`
+         * runs the stream spec's ClearQueue step in the same tick, which
+         * discards this very frame before the reader ever sees it — so
+         * erroring here would silently throw away the one thing the client
+         * needs to tell "rate limited" from "not satisfied".
+         *
+         * The typed terminal frame IS the protection, not a redundant layer
+         * on top of a torn-down connection: a `failed` frame can never be
+         * mistaken for a verdict because reading one requires a `done`
+         * object, which this branch never sends. Closing cleanly hands the
+         * client exactly that frame instead of replacing it with a weaker
+         * signal — a destroyed stream that carries no kind, no status, and no
+         * retryAt. Two backstops still stand regardless: `decodeFrames`
+         * throws on any line that parses but names no known frame type, and a
+         * stream that ends without a terminal frame at all is read as a
+         * failure, never a verdict. */
         send(frame);
-        /* Destroyed rather than closed: a truncated stream must never be
-         * mistakable for a completed one, and this is the belt to the
-         * terminal frame's braces. */
-        controller.error(new Error(frame.message));
+        controller.close();
         return;
       }
 
