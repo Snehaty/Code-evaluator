@@ -6,8 +6,10 @@ import { z } from "zod";
  * Deliberately a FUNCTION rather than an exported constant. A module-level
  * `export const env = schema.parse(process.env)` is evaluated during the build,
  * which bakes build-time values into the bundle and makes the same artifact
- * behave differently on two hosts. The deployment host here is deliberately
- * undecided, so configuration has to be read when it is used.
+ * behave differently on two hosts. The host is Vercel today, and a move to a
+ * long-lived Node host remains a redeploy — one artifact therefore has to
+ * behave correctly wherever it runs, so configuration has to be read when it
+ * is used.
  */
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
