@@ -116,8 +116,9 @@ seven stakeholder-facing screens — `/projects`, `/projects/new`, `/projects/[i
 
 Plan 02's repo attachment has since landed on the same foundation: six more endpoints under
 `/api/projects/:projectId/repos`, reusing the same `ServiceError` → JSON shape rather than
-inventing one, and an eighth screen, `/projects/[id]/repos`. Sixteen endpoints and eight screens
-are wired and integration-tested in total.
+inventing one, and an eighth screen, `/projects/[id]/repos`. Plan 03's claim submission (M6
+below) adds two more of each: eighteen endpoints and ten screens are wired and
+integration-tested in total.
 
 Known limitation, deliberately unaddressed in M4: nothing in `apps/web` catches a
 `SessionError` or a `ServiceError` thrown from a Server Component, and there is no
@@ -305,9 +306,12 @@ path and the Server Component path from diverging — they are the same function
 this*. `requireProjectMember`/`requireStakeholderMember` in `session.ts` are page-level
 conveniences over the same predicates, so each rule still has exactly one implementation.
 
-Uniform error body across all sixteen endpoints — plan 01 fixes the status codes and shape for
-its ten, and plan 02's six repo endpoints reuse the same `ServiceError` rather than defining
-their own:
+Uniform error body across all eighteen endpoints — plan 01 fixes the status codes and shape for
+its ten, and plan 02's six repo endpoints plus plan 03's two claim endpoints reuse the same
+`ServiceError` rather than defining their own. The one exception is
+`POST /api/projects/:projectId/claims`: once its response has started streaming, a failure
+cannot carry a status line, so it arrives instead as a terminal `failed` frame in the body
+(see M6) rather than this JSON shape:
 
 ```json
 { "error": { "code": "conflict", "message": "Already a member of this project" } }

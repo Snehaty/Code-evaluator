@@ -12,11 +12,13 @@ import { z } from "zod";
 const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
-  /* How long one Evaluator run may take. A serverless host caps this at its
-   * request execution ceiling; a long-lived Node host does not cap it at all.
-   * Feeds EvaluationProgress's `ceilingSeconds` prop, which turns the elapsed
-   * clock ochre past 70% so a developer is warned BEFORE the request is cut
-   * off. Host-configurable precisely because the host is not chosen yet. */
+  /* How long one Evaluator run may take. The host is Vercel, whose function
+   * limit is 60 seconds on the current plan; a long-lived Node host does not
+   * cap this at all. Feeds EvaluationProgress's `ceilingSeconds` prop, which
+   * turns the elapsed clock ochre past 70% so a developer is warned BEFORE
+   * the request is cut off. Configurable because the ceiling differs by
+   * host — 60 on Vercel today, 300 by default — not because the host is
+   * undecided. */
   EVAL_CEILING_SECONDS: z.coerce.number().int().positive().default(300),
 
   /* Which Gemini model the Evaluator runs. Configuration rather than a
