@@ -137,9 +137,16 @@ export function EvidenceLock({
           Evidence bundle sealed
           <HashRef hash={evidenceHash} algorithm={algorithm} />
         </span>
+        {/* Present tense on the checking would overstate it: no transparency
+          * log exists yet, so nothing can be checked against one today. What
+          * IS true now is that the digest is recorded, which is what will make
+          * the record checkable later without disclosing it. Saying so keeps
+          * "withheld is not unverifiable" intact without promising a
+          * capability that has not shipped. */}
         <span className="lg-evidence__note">
-          Contents are not disclosed in this phase. The digest can still be
-          checked against the log without revealing them.
+          Contents are not disclosed in this phase. The digest is recorded so
+          that once a transparency log exists, the bundle can be checked
+          against it without revealing them.
         </span>
       </span>
 

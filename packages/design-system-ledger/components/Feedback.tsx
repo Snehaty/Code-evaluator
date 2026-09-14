@@ -351,7 +351,18 @@ export function EvaluationProgress({
         {PHASE_ORDER.map((p) => {
           const state = p === phase ? "active" : done.has(p) ? "done" : "pending";
           return (
-            <li key={p} className="lg-eval__step" data-state={state}>
+            /* `aria-current` carries the state the mark carries visually. The
+             * mark itself is decorative and hidden, and `data-state` is read
+             * only by CSS, so without this a screen reader hears five
+             * undifferentiated labels with no way to tell what has run from
+             * what is running. The round chip only appears from round 2, so it
+             * cannot stand in for this on the common first pass. */
+            <li
+              key={p}
+              className="lg-eval__step"
+              data-state={state}
+              aria-current={state === "active" ? "step" : undefined}
+            >
               <span className="lg-eval__mark" aria-hidden="true" />
               <span className="lg-eval__step-label">{PHASE_LABEL[p]}</span>
               {p === phase && round >= 2 && (
