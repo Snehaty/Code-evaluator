@@ -15,8 +15,7 @@ document and those disagree about a rule, they win.
 | Magic-link delivery | Console transport behind a `MagicLinkSender` seam. No external provider |
 | Tests | Vitest, integration-first against real Postgres |
 
-Still deliberately open: the Transparency Log backend, claim-submission request/response shape,
-evidence disclosure.
+Still deliberately open: the Transparency Log backend, evidence disclosure.
 
 ### Why Next 15, pinned exact
 
@@ -28,7 +27,7 @@ compatibility risk at zero cost — nothing in the host-agnostic design needs a 
 ### Why Drizzle, and why Supabase is only Postgres
 
 Drizzle emits readable `.sql` migrations and ships no query-engine binary, keeping cold starts
-low if a serverless host is chosen. Supabase supplies the Postgres instance and nothing else:
+low on Vercel's serverless functions. Supabase supplies the Postgres instance and nothing else:
 no `supabase-js`, no Row Level Security, no Supabase Auth. Authorization lives in the app layer
 where plan 01's matrix is written. Moving to Neon, Railway, or local Postgres is a
 connection-string change.

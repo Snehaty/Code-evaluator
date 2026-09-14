@@ -46,8 +46,8 @@ Nothing reads a root `.env` — see the comment in `.env.example` for why.
 - `docs/architecture.md` — how it is built: stack decisions, repo layout, and the milestone
   plan for what is not built yet.
 - The repo is an npm workspace: `apps/web` is the deployable; `packages/contracts` (types
-  only), `packages/db` (Drizzle schema), `packages/orchestrator` (stub), and
-  `packages/design-system-ledger` are its workspace packages.
+  only), `packages/db` (Drizzle schema), `packages/orchestrator` (the LangGraph Evaluator),
+  and `packages/design-system-ledger` are its workspace packages.
 
 ## Tech stack
 
@@ -84,7 +84,7 @@ flowchart LR
     Stakeholder -->|email magic link| App
     Developer -->|GitHub OAuth, repo scope| App
     App["Next.js app\n(UI + API + orchestrator)"] --> DB[(Postgres)]
-    App -->|invoke on claim, in-session| Evaluator[["LangGraph Evaluator\n(black box)"]]
+    App -->|invoke on claim, in-session| Evaluator[["LangGraph Evaluator\n(built)"]]
     Evaluator -->|reads using the developer's own token| Repos[(GitHub repos)]
     Evaluator -->|verdict + rationale| App
     App -->|append entries| TLog[["Transparency Log\n(black box)"]]
@@ -96,7 +96,7 @@ flowchart LR
 | Next.js app | UI, CRUD API, session/auth for both roles, houses the orchestrator entrypoint |
 | Postgres | All relational state — projects, requirements + versions, memberships, invites, claims, verification records |
 | GitHub OAuth (`repo` scope) | Developer identity **and** all repo reads — one token, held in-session only, never persisted |
-| LangGraph Evaluator | Black box — given a requirement version + claimed commits, produces a verdict |
+| LangGraph Evaluator | Built — given a requirement version + claimed commits, produces a verdict; see `docs/orchestrator.md` |
 | Transparency Log | Black box — given event payloads, produces tamper-evident, independently-checkable records |
 
 ## Domain flow
@@ -108,7 +108,7 @@ flowchart LR
 4. A developer attaches one or more GitHub repos to the project (picked from repos their
    own GitHub account can see — no separate installation/consent step). → `docs/plans/02`
 5. A developer selects a requirement (pinned to its current version) and one or more
-   (repo, commit) pairs, and submits a claim. → *not yet designed*
+   (repo, commit) pairs, and submits a claim. → `docs/plans/03-claim-submission.md`
 6. The claim invokes the Evaluator **synchronously, within that same request**, reading
    repo content using the submitting developer's own live OAuth token.
 7. The Evaluator returns a verdict before the request completes; status is written
