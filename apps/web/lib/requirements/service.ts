@@ -152,7 +152,7 @@ export async function getRequirement(
 ): Promise<{
   requirement: RequirementView;
   versionHistory: VersionView[];
-  latestVerdict: LatestVerdict | null;
+  verdictsByVersion: Map<string, VerdictEntry[]>;
 }> {
   const requirement = await loadRequirement(db, requirementId);
 
@@ -173,13 +173,18 @@ export async function getRequirement(
     .where(eq(requirementVersions.requirementId, requirementId))
     .orderBy(asc(requirementVersions.versionNumber));
 
-  /* Against the CURRENT version only — that is what the status badge above
-   * already reports on, and what the stakeholder reading this page is asking
-   * about right now. A superseded version keeps whatever verdict it was
-   * evaluated against, but this page does not surface it. */
-  const latestVerdict = await latestVerdictFor(db, requirement.currentVersionId);
+  /* Every version's verdicts, not just the current one's. A superseded version
+   * keeps whatever verdict it was evaluated against — that is the whole point
+   * of pinning a claim to a version — and the requirement page reads as an
+   * audit trail only if those stay visible under the version they judged.
+   *
+   * The current version's latest verdict is the first entry under
+   * `requirement.currentVersionId`, which is why there is no second query for
+   * it: `verdictHistoryFor` orders by the same `evaluations.createdAt` desc
+   * that `latestVerdictFor` does, so the two cannot disagree. */
+  const verdictsByVersion = await verdictHistoryFor(db, requirementId);
 
-  return { requirement, versionHistory, latestVerdict };
+  return { requirement, versionHistory, verdictsByVersion };
 }
 
 export type LatestVerdict = {
@@ -189,6 +194,70 @@ export type LatestVerdict = {
   createdAt: Date;
   claimId: string;
 };
+
+/**
+ * One verdict in a requirement's history, WITHOUT its rationale.
+ *
+ * The omission is the point and it is enforced here rather than left to the
+ * page: a rationale is a paragraph, and a history is a list. Selecting it so a
+ * screen can choose not to render it invites the screen to render it, and the
+ * requirement page then becomes a wall of prose that nobody reads. The claim
+ * page is where a rationale belongs, and `claimId` is the route to it.
+ */
+export type VerdictEntry = {
+  requirementVersionId: string;
+  verdict: Verdict;
+  modelId: string;
+  createdAt: Date;
+  claimId: string;
+};
+
+/**
+ * Every verdict ever recorded against any version of one requirement, grouped
+ * by the version it judged and newest first within each group.
+ *
+ * One query, not one per version: a requirement with twelve versions would
+ * otherwise cost twelve round trips to render a page that shows all of them
+ * collapsed. `verdicts_requirement_version_idx` does not serve this filter —
+ * the join reaches versions through `requirement_id` — but the version set of
+ * a single requirement is small enough that the FK index on
+ * `requirement_versions.requirement_id` carries it.
+ *
+ * Selects nothing a project member may not see, and in particular never
+ * `evaluations.evidence`, which holds verbatim private source.
+ */
+export async function verdictHistoryFor(
+  db: Db,
+  requirementId: string,
+): Promise<Map<string, VerdictEntry[]>> {
+  const rows = await db
+    .select({
+      requirementVersionId: verdicts.requirementVersionId,
+      verdict: verdicts.verdict,
+      modelId: evaluations.modelId,
+      createdAt: evaluations.createdAt,
+      claimId: evaluations.claimId,
+    })
+    .from(verdicts)
+    .innerJoin(evaluations, eq(evaluations.id, verdicts.evaluationId))
+    .innerJoin(
+      requirementVersions,
+      eq(requirementVersions.id, verdicts.requirementVersionId),
+    )
+    .where(eq(requirementVersions.requirementId, requirementId))
+    /* The same key `latestVerdictFor` orders by, so "the first entry for the
+     * current version" and "the latest verdict" are the same row by
+     * construction rather than by coincidence. */
+    .orderBy(desc(evaluations.createdAt));
+
+  const byVersion = new Map<string, VerdictEntry[]>();
+  for (const row of rows) {
+    const bucket = byVersion.get(row.requirementVersionId);
+    if (bucket) bucket.push(row);
+    else byVersion.set(row.requirementVersionId, [row]);
+  }
+  return byVersion;
+}
 
 /**
  * The most recent verdict against one requirement version, or null if it has

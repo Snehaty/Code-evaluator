@@ -8,7 +8,6 @@ import {
   PageHeader,
   RepoRef,
   Section,
-  SectionHeading,
   Table,
   Td,
 } from "@zkcvp/design-system-ledger/components";
@@ -22,7 +21,9 @@ import {
   listCandidateRepos,
   UNDO_WINDOW_MS,
 } from "../../../../lib/repos/service";
+import { splitFullName } from "../../../../lib/repos/full-name";
 import { AttachRepoForm } from "./AttachRepoForm";
+import { ProjectNav } from "../ProjectNav";
 
 /** Absolute dates throughout this product, never relative. */
 const dateFormat = new Intl.DateTimeFormat("en-GB", {
@@ -30,18 +31,6 @@ const dateFormat = new Intl.DateTimeFormat("en-GB", {
   month: "short",
   day: "numeric",
 });
-
-/**
- * `full_name` is `owner/name`, but `RepoRef` wants the two parts separately so
- * it can dim the owner segment. Split on the first slash only — a repo name
- * itself never contains one, an owner (org) name never does either.
- */
-function splitFullName(fullName: string): { owner: string; name: string } {
-  const i = fullName.indexOf("/");
-  return i === -1
-    ? { owner: "", name: fullName }
-    : { owner: fullName.slice(0, i), name: fullName.slice(i + 1) };
-}
 
 export default async function ReposPage({
   params,
@@ -102,12 +91,11 @@ export default async function ReposPage({
           />
         }
         lead="Repositories a developer has attached from their own GitHub account."
+        nav={<ProjectNav projectId={id} active="repositories" />}
       />
 
       <div className="lg-stack lg-stack--loose">
         <Section>
-          <SectionHeading>Attached</SectionHeading>
-
           {repos.length === 0 ? (
             <EmptyState title="No repositories attached yet">
               {isDeveloper

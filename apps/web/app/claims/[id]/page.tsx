@@ -21,6 +21,7 @@ import { getDb } from "../../../lib/db";
 import { requireSession } from "../../../lib/auth/session";
 import { getProject } from "../../../lib/projects/service";
 import { getClaim } from "../../../lib/claims/service";
+import { splitFullName } from "../../../lib/repos/full-name";
 
 /** Absolute dates throughout this product, never relative. */
 const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
@@ -30,19 +31,6 @@ const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
 });
-
-/**
- * `full_name` is `owner/name`, but `RepoRef` wants the two parts separately so
- * it can dim the owner segment. Split on the first slash only — a repo name
- * itself never contains one, an owner (org) name never does either. (Same
- * helper as repos/page.tsx; the app has no shared home for it yet.)
- */
-function splitFullName(fullName: string): { owner: string; name: string } {
-  const i = fullName.indexOf("/");
-  return i === -1
-    ? { owner: "", name: fullName }
-    : { owner: fullName.slice(0, i), name: fullName.slice(i + 1) };
-}
 
 export default async function ClaimPage({
   params,
@@ -73,6 +61,14 @@ export default async function ClaimPage({
             items={[
               { label: "Projects", href: "/projects" },
               { label: project.name, href: `/projects/${claim.projectId}` },
+              /* The claim list, which is where this page is reached from and
+                 the only way back to its siblings. Without it the trail jumped
+                 from a single claim to the whole project and the list in
+                 between was unreachable by going up. */
+              {
+                label: "Claims",
+                href: `/projects/${claim.projectId}/claims`,
+              },
               { label: "Claim" },
             ]}
           />
@@ -104,8 +100,15 @@ export default async function ClaimPage({
             </CardBody>
           </Card>
         ) : (
+          /* No section heading. PageHeader already draws the ink rule that
+             closes the title block, and a "Verdicts" heading immediately under
+             it drew a second rule a line and a half later: two full-width rules
+             stacked, with one short word between them. The verdict cards name
+             their own requirements and carry their own badges, so the heading
+             was labelling something that could not be mistaken for anything
+             else. "Evaluation record" below keeps its heading, because what
+             follows it genuinely needs naming. */
           <Section>
-            <SectionHeading>Verdicts</SectionHeading>
             <div className="lg-stack">
               {claim.evaluation.results.map((r) => (
                 <VerdictCard

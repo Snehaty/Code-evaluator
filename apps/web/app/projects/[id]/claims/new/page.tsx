@@ -80,6 +80,7 @@ export default async function NewClaimPage({
               projectId={id}
               requirements={requirements.map((r) => ({
                 requirementVersionId: r.currentVersionId,
+                versionNumber: r.versionNumber,
                 title: r.title,
                 description: r.description,
                 status: r.status,

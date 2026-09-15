@@ -8,12 +8,15 @@ import {
   Alert,
   Button,
   Checkbox,
+  Disclosure,
+  DisclosureList,
   CommitList,
   CommitRow,
   Field,
   Fieldset,
   Select,
   StatusBadge,
+  VersionPill,
   EvaluationProgress,
 } from "@zkcvp/design-system-ledger/components";
 import { listBranchesAction, listCommitsAction } from "./actions";
@@ -21,6 +24,12 @@ import { useClaimStream, type ClaimRun } from "../../../../../lib/claims/use-cla
 
 export type ClaimRequirementOption = {
   requirementVersionId: string;
+  /**
+   * The version this claim would pin, which is always the requirement's current
+   * one: `createClaim` rejects a superseded version outright, on the grounds
+   * that evaluating one would judge text the developer never read.
+   */
+  versionNumber: number;
   title: string;
   description: string;
   status: RequirementStatus;
@@ -284,27 +293,48 @@ export function ClaimComposer({
           {validationError && <Alert tone="danger">{validationError}</Alert>}
 
           <Fieldset legend="Requirements this claim covers">
-            <div className="lg-stack lg-stack--tight">
+            {/* The same expandable entries the checklist uses, so a developer
+                picking requirements reads them in the shape they already know
+                from the project page. The checkbox rides in the `lead` slot,
+                outside the summary: inside one, a single click would both
+                select the requirement and expand it, and the description a
+                developer opened to read would collapse the moment they ticked
+                the box they opened it to decide about. */}
+            <DisclosureList>
               {requirements.map((r) => (
-                <Checkbox
+                <Disclosure
                   key={r.requirementVersionId}
-                  className="app-claim-req"
-                  checked={selectedReqs.has(r.requirementVersionId)}
-                  onChange={() => toggleRequirement(r.requirementVersionId)}
-                  label={
-                    <span className="app-claim-req__label">
-                      <span className="app-claim-req__head">
-                        <span className="app-claim-req__title">{r.title}</span>
-                        <StatusBadge status={r.status} />
-                      </span>
-                      {r.description && (
-                        <span className="lg-caption">{r.description}</span>
-                      )}
-                    </span>
+                  lead={
+                    <Checkbox
+                      checked={selectedReqs.has(r.requirementVersionId)}
+                      onChange={() => toggleRequirement(r.requirementVersionId)}
+                      /* The summary carries the title visually; the checkbox
+                         needs its own name, because "checkbox" is all a screen
+                         reader would otherwise announce. */
+                      label={
+                        <span className="lg-sr-only">{`Claim ${r.title}`}</span>
+                      }
+                    />
                   }
-                />
+                  summary={
+                    <>
+                      {r.title}
+                      <StatusBadge status={r.status} />
+                    </>
+                  }
+                  /* The version the claim would pin, in the trailing slot the
+                     checklist uses for a timestamp. A claim is a statement
+                     about a specific version and the record keeps it forever,
+                     so the developer should be able to see which one they are
+                     signing for without opening the requirement. */
+                  meta={<VersionPill version={r.versionNumber} current />}
+                >
+                  {r.description ? (
+                    <p className="lg-prose">{r.description}</p>
+                  ) : null}
+                </Disclosure>
               ))}
-            </div>
+            </DisclosureList>
           </Fieldset>
 
           <Fieldset legend="Repositories and commits">

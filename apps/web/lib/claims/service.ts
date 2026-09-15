@@ -1,10 +1,11 @@
 // apps/web/lib/claims/service.ts
 import { createHash } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   claimRepos,
   claimRequirementVersions,
   claims,
+  developers,
   evaluations,
   projectRepos,
   requirementVersions,
@@ -202,6 +203,149 @@ export async function recordEvaluation(
         .where(eq(requirementVersions.id, r.requirementVersionId));
     }
   });
+}
+
+export type ClaimSummary = {
+  id: string;
+  submittedAt: Date;
+  /** The display cache from `developers`, never a join key. */
+  submittedBy: string;
+  commits: { fullName: string; commitSha: string }[];
+  /**
+   * How many requirement versions this claim pinned.
+   *
+   * Read from `claim_requirement_versions`, NOT from the verdict count, so it
+   * is a fact about the claim rather than about its evaluation: an interrupted
+   * run still claimed a definite number of requirements, and saying so is the
+   * difference between "nothing was evaluated" and "nothing was claimed".
+   */
+  requirementCount: number;
+  /**
+   * The tally of the claim's own verdicts, one per requirement version it
+   * pinned, or null when the run was interrupted.
+   *
+   * A verdict is per requirement version and never per claim. A claim naming
+   * three requirements comes back with three verdicts and they may disagree,
+   * which is why this is a pair of counts and not a single value: there is no
+   * such thing as "the claim's verdict" to collapse them into.
+   *
+   * Null is NOT "pending" and NOT zero-of-zero: there is no in-flight state in
+   * this product, so a claim with no evaluation is an abandoned submission and
+   * nothing about it will ever change.
+   */
+  outcome: { satisfied: number; notSatisfied: number } | null;
+};
+
+/**
+ * Every claim submitted against one project, newest first.
+ *
+ * Five queries whatever the claim count, never one per claim: the commits, the
+ * pinned requirement versions, the evaluations and the verdicts are each
+ * fetched for the whole page and stitched in memory. `DATABASE_URL` is a hosted pooler and round trips are the entire
+ * cost of a page here (docs/architecture.md, "The harness"), so an N+1 that
+ * looks harmless on a demo project is what this shape exists to refuse.
+ *
+ * Readable by any project member, stakeholders included, on the same reasoning
+ * as `getClaim`: a report is unconditionally visible the moment it exists, and
+ * this carries strictly less than the report does.
+ */
+export async function listClaims(
+  db: Db,
+  session: Session,
+  projectId: string,
+): Promise<ClaimSummary[]> {
+  if (!(await isProjectMember(db, session, projectId))) throw forbidden();
+
+  const rows = await db
+    .select({
+      id: claims.id,
+      submittedAt: claims.submittedAt,
+      submittedBy: developers.githubUsername,
+    })
+    .from(claims)
+    .innerJoin(developers, eq(developers.id, claims.submittedBy))
+    .where(eq(claims.projectId, projectId))
+    .orderBy(desc(claims.submittedAt));
+
+  /* `inArray` with an empty list builds `in ()`, which Postgres rejects. A
+   * project with no claims is the first thing a new project is, so this is the
+   * common path rather than a defensive edge. */
+  if (rows.length === 0) return [];
+  const claimIds = rows.map((r) => r.id);
+
+  const commitRows = await db
+    .select({
+      claimId: claimRepos.claimId,
+      fullName: projectRepos.fullName,
+      commitSha: claimRepos.commitSha,
+    })
+    .from(claimRepos)
+    .innerJoin(projectRepos, eq(projectRepos.id, claimRepos.projectRepoId))
+    .where(inArray(claimRepos.claimId, claimIds));
+
+  const pinnedRows = await db
+    .select({ claimId: claimRequirementVersions.claimId })
+    .from(claimRequirementVersions)
+    .where(inArray(claimRequirementVersions.claimId, claimIds));
+
+  const evaluationRows = await db
+    .select({ id: evaluations.id, claimId: evaluations.claimId })
+    .from(evaluations)
+    .where(inArray(evaluations.claimId, claimIds));
+
+  const verdictRows = evaluationRows.length
+    ? await db
+        .select({
+          evaluationId: verdicts.evaluationId,
+          verdict: verdicts.verdict,
+        })
+        .from(verdicts)
+        .where(
+          inArray(
+            verdicts.evaluationId,
+            evaluationRows.map((e) => e.id),
+          ),
+        )
+    : [];
+
+  const pinnedByClaim = new Map<string, number>();
+  for (const p of pinnedRows) {
+    pinnedByClaim.set(p.claimId, (pinnedByClaim.get(p.claimId) ?? 0) + 1);
+  }
+
+  const commitsByClaim = new Map<string, { fullName: string; commitSha: string }[]>();
+  for (const c of commitRows) {
+    const bucket = commitsByClaim.get(c.claimId);
+    const entry = { fullName: c.fullName, commitSha: c.commitSha };
+    if (bucket) bucket.push(entry);
+    else commitsByClaim.set(c.claimId, [entry]);
+  }
+
+  /* Seeded from the EVALUATIONS, not from the verdicts, so a claim that was
+   * evaluated reads as evaluated even if the tally is somehow empty. Deriving
+   * "was this evaluated" from whether verdicts exist would render a real
+   * evaluation as an interrupted run, which is the one distinction on this
+   * screen that must not blur. */
+  const tallyByClaim = new Map<string, { satisfied: number; notSatisfied: number }>();
+  const claimByEvaluation = new Map(evaluationRows.map((e) => [e.id, e.claimId]));
+  for (const e of evaluationRows) {
+    tallyByClaim.set(e.claimId, { satisfied: 0, notSatisfied: 0 });
+  }
+  for (const v of verdictRows) {
+    const tally = tallyByClaim.get(claimByEvaluation.get(v.evaluationId)!);
+    if (!tally) continue;
+    if (v.verdict === "satisfied") tally.satisfied++;
+    else tally.notSatisfied++;
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    submittedAt: r.submittedAt,
+    submittedBy: r.submittedBy,
+    commits: commitsByClaim.get(r.id) ?? [],
+    requirementCount: pinnedByClaim.get(r.id) ?? 0,
+    outcome: tallyByClaim.get(r.id) ?? null,
+  }));
 }
 
 export type ClaimDetail = {

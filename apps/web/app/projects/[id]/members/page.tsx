@@ -18,6 +18,7 @@ import { requireSession } from "../../../../lib/auth/session";
 import { getProject } from "../../../../lib/projects/service";
 import { listMembers } from "../../../../lib/projects/members";
 import { InviteForm } from "./InviteForm";
+import { ProjectNav } from "../ProjectNav";
 
 /** Absolute dates throughout this product, never relative. */
 const dateFormat = new Intl.DateTimeFormat("en-GB", {
@@ -65,13 +66,12 @@ export default async function MembersPage({
           />
         }
         lead="Developers on this project, and anyone invited who has not signed in yet."
+        nav={<ProjectNav projectId={id} active="members" />}
       />
 
       {/* PageHeader carries its own bottom margin; the blocks after it do not. */}
       <div className="lg-stack lg-stack--loose">
         <Section>
-          <SectionHeading>Developers</SectionHeading>
-
           {members.length === 0 ? (
             <EmptyState title="No developers yet">
               {pendingInvites.length > 0

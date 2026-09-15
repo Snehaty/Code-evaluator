@@ -4,10 +4,12 @@ import {
   Alert,
   Breadcrumb,
   Button,
-  Card,
-  CardBody,
-  CardHeader,
+  DescriptionList,
+  Disclosure,
+  DisclosureList,
   ICON_MD,
+  ICON_SM,
+  IconChevron,
   IconNew,
   Mono,
   PageHeader,
@@ -17,12 +19,16 @@ import {
   Timeline,
   TimelineItem,
   VerdictBadge,
+  VerdictStatement,
   VersionPill,
 } from "@zkcvp/design-system-ledger/components";
 import { getDb } from "../../../lib/db";
 import { requireSession } from "../../../lib/auth/session";
 import { getProject } from "../../../lib/projects/service";
-import { getRequirement } from "../../../lib/requirements/service";
+import {
+  getRequirement,
+  type VerdictEntry,
+} from "../../../lib/requirements/service";
 import { ArchiveButton } from "./ArchiveButton";
 
 /** Absolute dates throughout this product, never relative. */
@@ -33,6 +39,55 @@ const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+/**
+ * One verdict, without its rationale.
+ *
+ * The rationale is a paragraph and this page carries up to one of these per
+ * evaluation per version; rendering them all here would bury the checklist
+ * under prose that the claim page presents properly, next to the pinned commits
+ * and the sealed evidence digest the rationale is actually about. So the link
+ * is not a convenience, it is where the rest of this verdict lives.
+ *
+ * The marker is the neutral `IconNew` on every row, deliberately: `VerdictBadge`
+ * already says what happened, and a second status-coded glyph beside it would
+ * encode the same fact twice. Version history below follows the same rule.
+ */
+function VerdictEntryItem({ entry }: { entry: VerdictEntry }) {
+  return (
+    <TimelineItem
+      marker={<IconNew size={ICON_MD} />}
+      title={<VerdictBadge verdict={entry.verdict} />}
+      /* Not TimelineItem's `at` prop, which formats in the reader's locale:
+       * this page pins en-GB, and two date formats on one screen is worse than
+       * a hand-built stamp. `<time>` keeps the value machine-readable anyway. */
+      meta={
+        <time dateTime={entry.createdAt.toISOString()}>
+          {dateTimeFormat.format(entry.createdAt)}
+        </time>
+      }
+    >
+      <span className="lg-row-flex lg-row-flex--wrap">
+        <span className="lg-caption">
+          Evaluated by <Mono>{entry.modelId}</Mono>
+        </span>
+        {/* A control, not a sentence with a line under it. The chevron carries
+            the direction and the label carries the destination; a bare
+            underlined phrase in a list of them reads as unstyled hypertext. */}
+        <Link href={`/claims/${entry.claimId}`}>
+          <Button
+            type="button"
+            tone="quiet"
+            size="sm"
+            iconEnd={<IconChevron size={ICON_SM} />}
+          >
+            View the claim
+          </Button>
+        </Link>
+      </span>
+    </TimelineItem>
+  );
+}
 
 export default async function RequirementPage({
   params,
@@ -45,21 +100,37 @@ export default async function RequirementPage({
    * stakeholder-only. */
   const session = await requireSession();
   const db = getDb();
-  const { requirement, versionHistory, latestVerdict } = await getRequirement(
-    db,
-    session,
-    id,
-  );
+  const { requirement, versionHistory, verdictsByVersion } =
+    await getRequirement(db, session, id);
 
   /* Only for the trail. `getRequirement` already proved membership of this
-   * project, so this cannot widen what the visitor can reach — it re-reads a row
-   * they have just been authorised against, to put a name on it. A requirement
-   * reached from a link used to be a dead end that never said which checklist
-   * it belonged to. */
+   * project, so this cannot widen what the visitor can reach — it re-reads a
+   * row they have just been authorised against, to put a name on it. A
+   * requirement reached from a link used to be a dead end that never said which
+   * checklist it belonged to. */
   const project = await getProject(db, session, requirement.projectId);
 
   const archived = requirement.archivedAt !== null;
   const isStakeholder = session.kind === "stakeholder";
+
+  /* The service orders each version's verdicts newest first, so the current
+   * version's newest verdict is [0]. No second query and no second ordering
+   * rule: "the latest verdict" and "the first entry for the current version"
+   * are the same row by construction. */
+  const latestVerdict =
+    verdictsByVersion.get(requirement.currentVersionId)?.[0] ?? null;
+
+  /* The history section earns its place only when it holds something the head
+   * of the page does not already show. At v1 with at most one verdict it holds
+   * nothing else: same title, same description, same status, same date, same
+   * verdict, one row restating the two cards above it. Every requirement on a
+   * new checklist is in exactly that state, so this is the common case rather
+   * than the edge one. */
+  const verdictCount = [...verdictsByVersion.values()].reduce(
+    (n, list) => n + list.length,
+    0,
+  );
+  const showHistory = versionHistory.length > 1 || verdictCount > 1;
 
   return (
     <main className="lg-container app-page">
@@ -118,148 +189,185 @@ export default async function RequirementPage({
           </Alert>
         ) : null}
 
-        <Card>
-          <CardHeader
-            title="Current version"
-            /* Two axes, two chips, side by side. `archived_at` and the current
-             * version's `status` are independent — plan 01, invariant 5:
-             * "never let one imply or overwrite the other" — so unlike a
-             * RequirementRow, which folds them because it has room for one
-             * badge, this page keeps the status badge reporting the version's
-             * own status and adds the archived chip beside it. The archived
-             * chip is dashed rather than filled precisely so it can never be
-             * read as a fourth status. */
-            actions={
-              /* One wrapping row: `.lg-card__header` does not wrap, and three
-               * chips plus a timestamp next to a title will not fit a phone. */
-              <span className="lg-row-flex lg-row-flex--wrap">
-                <VersionPill version={requirement.versionNumber} current />
-                <StatusBadge status={requirement.status} />
-                {requirement.archivedAt ? (
-                  /* The date rides with the chip rather than occupying a row of
-                   * its own — the chip already carries the fact, the date only
-                   * says when. Nested so the two never split across lines. */
-                  <span className="lg-row-flex">
-                    <StatusBadge status="archived" />
-                    <span className="lg-caption">
-                      {dateTimeFormat.format(requirement.archivedAt)}
-                    </span>
+        {/* The two questions a reader arrives with, answered side by side:
+            what does this requirement currently say, and what did the Evaluator
+            last make of it.
+
+            The sides are built out of opposite materials on purpose. The
+            requirement is text a person wrote, so it sits flat on the page as a
+            document, with nothing but a label and a version stamp over it: a
+            card around a paragraph adds a border and takes away the reading.
+            The verdict is the Evaluator's conclusion, so it is a bordered panel
+            whose hairline is tinted by the verdict itself, the same tint
+            `VerdictCard` uses on the claim page. A reader scanning a checklist
+            of these finds the outcome by edge colour before reading a word. */}
+        <div className="app-req-head">
+          <div className="lg-stack lg-stack--tight">
+            {/* Label and version stamp on one line, mirroring the panel's own
+             * "Evaluator verdict" label opposite. No status chip: it reported
+             * the current version's status, which is derived from the very
+             * verdict in the panel beside it, so the two said the same thing
+             * twice in two vocabularies. Archived stays, because `archived_at`
+             * is orthogonal to status (plan 01, invariant 5) and nothing else
+             * on this page carries it. */}
+            <span className="lg-row-flex lg-row-flex--wrap">
+              <span className="lg-micro-label">Current version</span>
+              <VersionPill version={requirement.versionNumber} current />
+              {requirement.archivedAt ? (
+                <span className="lg-row-flex">
+                  <StatusBadge status="archived" />
+                  <span className="lg-caption">
+                    {dateTimeFormat.format(requirement.archivedAt)}
                   </span>
-                ) : null}
-              </span>
-            }
-          />
-          <CardBody>
+                </span>
+              ) : null}
+            </span>
             <p className="lg-prose">{requirement.description}</p>
-          </CardBody>
-        </Card>
+          </div>
 
-        {/* Only once the current version has actually been evaluated — a
-            version at `new` has no row here at all, and this is a report on
-            a real outcome, not a placeholder for one. Reuses the same
-            Timeline/TimelineItem pair as Version history below rather than a
-            one-off card, so a single verdict and a run of them read as the
-            same kind of thing when this grows a real history later. The
-            marker stays the neutral IconNew, matching Version history's own
-            reasoning: VerdictBadge already says what happened, and a second
-            status-coded glyph would encode it twice. */}
-        {latestVerdict ? (
-          <Section>
-            <SectionHeading>Latest verdict</SectionHeading>
-            <Timeline label="Latest verdict">
-              <TimelineItem
-                marker={<IconNew size={ICON_MD} />}
-                title={<VerdictBadge verdict={latestVerdict.verdict} />}
-                meta={
-                  <time dateTime={latestVerdict.createdAt.toISOString()}>
-                    {dateTimeFormat.format(latestVerdict.createdAt)}
-                  </time>
-                }
-              >
-                {/* Prose only. A rationale cites file paths and line ranges
-                    and never contains source code — the Evaluator enforces
-                    that at generation time, so this renders it verbatim with
-                    no display-layer filtering of its own. `lg-prose`, the
-                    same class the requirement description above uses. */}
-                <p className="lg-prose">{latestVerdict.rationale}</p>
-                <p className="lg-caption">
-                  Evaluated by <Mono>{latestVerdict.modelId}</Mono>
-                </p>
-                {/* The claim that produced this verdict — the pinned commits
-                    and, on that page, the sealed evidence digest. */}
+          {latestVerdict ? (
+            /* "Latest verdict", not the component's default "Evaluator
+               verdict". On a report view the label names who produced the
+               verdict; here the page shows a whole trail of them below, so
+               what the reader needs is which one this is. */
+            <VerdictStatement
+              verdict={latestVerdict.verdict}
+              size="panel"
+              label="Latest verdict"
+            >
+              {/* Below the rule: the facts that qualify the verdict, in the
+                  same two terms and the same order the claim page uses under
+                  "Evaluation record", so following the button lands on a
+                  fuller version of what was just read rather than on a
+                  differently shaped restatement of it. */}
+              <DescriptionList
+                items={[
+                  {
+                    term: "Evaluated",
+                    value: (
+                      <time dateTime={latestVerdict.createdAt.toISOString()}>
+                        {dateTimeFormat.format(latestVerdict.createdAt)}
+                      </time>
+                    ),
+                  },
+                  { term: "Model", value: <Mono>{latestVerdict.modelId}</Mono> },
+                ]}
+              />
+              {/* The rationale is deliberately not on this page: it belongs
+                  beside the pinned commits and the sealed evidence digest it
+                  argues from. The button names where it goes rather than what
+                  the reader will do when they arrive. */}
+              <span className="lg-row-flex">
                 <Link href={`/claims/${latestVerdict.claimId}`}>
-                  View the claim that produced this verdict
+                  <Button
+                    type="button"
+                    tone="secondary"
+                    size="sm"
+                    iconEnd={<IconChevron size={ICON_SM} />}
+                  >
+                    View claim
+                  </Button>
                 </Link>
-              </TimelineItem>
-            </Timeline>
-          </Section>
-        ) : null}
+              </span>
+            </VerdictStatement>
+          ) : (
+            /* No verdict has a panel of its own rather than an empty one: an
+               outcome-tinted border around "there is no outcome" would be the
+               one thing this surface must never imply. Not an error and not a
+               wait either, since there is no in-flight state in this product. */
+            <div className="app-req-noverdict lg-stack lg-stack--tight">
+              <span className="lg-micro-label">Latest verdict</span>
+              <p className="lg-body lg-text-muted">
+                None yet. This version has not been claimed, so nothing has read
+                the code against it.
+              </p>
+            </div>
+          )}
+        </div>
 
-        {/* Only once there is a history to show. At v1 the single entry
-            repeats the card above it line for line — same title, same
-            description, same status, same date — and a "Version history"
-            heading over one duplicated row states a fact the reader can
-            already see. Every requirement on a new checklist is at v1, so this
-            is the common case, not the edge one. Nothing is lost: the card
-            carries the version pill, the status and the text, and the header
-            carries the title and the creation date. */}
-        {versionHistory.length > 1 ? (
+        {showHistory ? (
           <Section>
             <SectionHeading>Version history</SectionHeading>
-            {/* Versions are immutable: an edit writes a new one and never alters
-                an old one, so this list is an audit trail and is shown in full,
-                in version order, exactly as the service returns it. The current
-                version is included: seeing the trail end where the card begins is
-                what confirms the card is the latest. */}
-            <Timeline label="Version history">
-              {versionHistory.map((v) => (
-                <TimelineItem
-                  key={v.id}
-                  /* Every item in the system's own gallery carries a marker, and
-                   * the connecting rule is drawn down the marker column — without
-                   * one the rule ran between two invisible nodes and the entries
-                   * sat behind an empty gutter. Deliberately the same neutral
-                   * glyph on every row: the StatusBadge below already says what
-                   * this version reached, and a second status-coded mark would
-                   * encode it twice. */
-                  marker={<IconNew size={ICON_MD} />}
-                  title={
-                    <>
-                      <VersionPill
-                        version={v.versionNumber}
-                        current={v.id === requirement.currentVersionId}
-                      />{" "}
-                      {v.title}
-                    </>
-                  }
-                  /* Not TimelineItem's `at` prop, which formats in the reader's
-                   * locale: this page pins en-GB, and two date formats on one
-                   * screen is worse than a hand-built stamp. `<time>` is here so
-                   * the value stays machine-readable anyway. */
-                  meta={
-                    <time dateTime={v.createdAt.toISOString()}>
-                      {dateTimeFormat.format(v.createdAt)}
-                    </time>
-                  }
-                >
-                  {/* The chip is wrapped: a bare chip in the timeline's flex
-                      column would be stretched to the column's full width. */}
-                  <span className="lg-row-flex">
-                    {/* The raw enum never reaches the screen — StatusBadge owns
-                        the label, and `eval_failed` reads "Not satisfied". */}
-                    <StatusBadge status={v.status} />
-                  </span>
-                  {/* `lg-prose`, matching the card above. base.css scopes that
-                      class to "evaluator rationales and requirement
-                      descriptions", which is exactly this — and `lg-body` had it
-                      set brighter and to the full container width, so a
-                      superseded version read as more prominent than the current
-                      one and the same sentence took two different measures 150px
-                      apart. */}
-                  <p className="lg-prose">{v.description}</p>
-                </TimelineItem>
-              ))}
-            </Timeline>
+            {/* Versions are immutable: an edit writes a new one and never
+                alters an old one, so this is an audit trail and is shown in
+                full, oldest first, exactly as the service returns it. The
+                current version is included: seeing the trail end where the card
+                above begins is what confirms the card is the latest.
+
+                Collapsed by default, all of them. The description of the
+                current version is already on this page in full, and the older
+                descriptions are what a reader opens the trail to compare
+                rather than what they need to scan. Each summary row still
+                carries the version, the title, the outcome and the evaluation
+                count, so nothing here has to be opened to be found. */}
+            <DisclosureList>
+              {versionHistory.map((v) => {
+                /* Reversed to oldest-first. The service orders each version's
+                 * verdicts newest-first so that [0] is the latest, which the
+                 * card above needs; inside the trail every other list on this
+                 * page runs forward in time, and one list running backward
+                 * among them reads as a bug rather than as a choice. */
+                const entries = [...(verdictsByVersion.get(v.id) ?? [])].reverse();
+
+                return (
+                  <Disclosure
+                    key={v.id}
+                    summary={
+                      <>
+                        <VersionPill
+                          version={v.versionNumber}
+                          current={v.id === requirement.currentVersionId}
+                        />
+                        {v.title}
+                        {/* The raw enum never reaches the screen — StatusBadge
+                            owns the label, and `eval_failed` reads "Not
+                            satisfied". */}
+                        <StatusBadge status={v.status} />
+                      </>
+                    }
+                    meta={
+                      <>
+                        <time dateTime={v.createdAt.toISOString()}>
+                          {dateTimeFormat.format(v.createdAt)}
+                        </time>
+                        {/* How many times this version was evaluated, which the
+                            status chip cannot say: a version evaluated four
+                            times and one evaluated once both read "Verified".
+                            It is also what tells the reader whether opening
+                            this row is worth a click. */}
+                        {entries.length > 0
+                          ? ` · ${entries.length} ${
+                              entries.length === 1 ? "verdict" : "verdicts"
+                            }`
+                          : null}
+                      </>
+                    }
+                  >
+                    {/* `lg-prose`, matching the card above. base.css scopes that
+                        class to "evaluator rationales and requirement
+                        descriptions", which is exactly this, and `lg-body` had
+                        it set brighter and to the full container width, so a
+                        superseded version read as more prominent than the
+                        current one. */}
+                    <p className="lg-prose">{v.description}</p>
+
+                    {entries.length > 0 ? (
+                      <Timeline
+                        label={`Verdicts against version ${v.versionNumber}`}
+                      >
+                        {entries.map((entry) => (
+                          <VerdictEntryItem key={entry.claimId} entry={entry} />
+                        ))}
+                      </Timeline>
+                    ) : (
+                      <p className="lg-caption">
+                        No claim has ever named this version.
+                      </p>
+                    )}
+                  </Disclosure>
+                );
+              })}
+            </DisclosureList>
           </Section>
         ) : null}
       </div>

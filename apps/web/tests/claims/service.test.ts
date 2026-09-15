@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { withTestSchema } from "@zkcvp/db/testing";
 import { eq } from "drizzle-orm";
 import {
+  claims,
   developers,
   evaluations,
   projectDevelopers,
@@ -18,7 +19,13 @@ import {
 import type { EvidenceBundle, Report } from "@zkcvp/contracts";
 import { ServiceError } from "../../lib/api/errors";
 import { createRequirement } from "../../lib/requirements/service";
-import { createClaim, evidenceHash, getClaim, recordEvaluation } from "../../lib/claims/service";
+import {
+  createClaim,
+  evidenceHash,
+  getClaim,
+  listClaims,
+  recordEvaluation,
+} from "../../lib/claims/service";
 
 async function fixture(db: Db) {
   const [s] = await db
@@ -369,5 +376,158 @@ describe("evidenceHash", () => {
     const a = { evaluationId: "e", claimId: "c", toolCallLog: [], planReasoning: "p", droppedPaths: [] };
     const b = { droppedPaths: [], planReasoning: "p", toolCallLog: [], claimId: "c", evaluationId: "e" };
     expect(evidenceHash(a as EvidenceBundle)).toBe(evidenceHash(b as EvidenceBundle));
+  });
+});
+
+describe("listClaims", () => {
+  it("returns an empty list for a project with no claims", async () => {
+    await withTestSchema(async (db) => {
+      const { project, shSession } = await fixture(db);
+      /* Not a formality: the query pages `inArray` over the claim ids it just
+       * read, and `in ()` is a syntax error in Postgres. A project with no
+       * claims is the first thing every project is. */
+      await expect(listClaims(db, shSession, project.id)).resolves.toEqual([]);
+    });
+  });
+
+  it("refuses a caller who is not a member of the project", async () => {
+    await withTestSchema(async (db) => {
+      const { project } = await fixture(db);
+      const [outsider] = await db
+        .insert(stakeholders)
+        .values({ email: "outsider@example.com", displayName: "O" })
+        .returning();
+
+      await expect(
+        listClaims(
+          db,
+          { kind: "stakeholder", stakeholderId: outsider.id },
+          project.id,
+        ),
+      ).rejects.toBeInstanceOf(ServiceError);
+    });
+  });
+
+  /*
+   * The stitching test. Three claims are fetched with three list queries and
+   * joined in memory, which is the whole reason this function does not cost one
+   * round trip per claim, and also the only way it can go wrong: a tally landing
+   * on the wrong claim, or one claim's commits appearing under another.
+   *
+   * The three claims are deliberately different shapes. The mixed one proves
+   * the tally is per claim rather than per project; the interrupted one proves
+   * `outcome: null` survives being stitched beside claims that do have one.
+   *
+   * `submitted_at` is set explicitly. It defaults to `now()`, and three claims
+   * written inside one test can land on an identical timestamp, which would
+   * make an ordering assertion pass with no ORDER BY at all.
+   */
+  it("orders newest first and tallies each claim's own verdicts", async () => {
+    await withTestSchema(async (db) => {
+      const { project, repo, requirement, shSession, devSession } =
+        await fixture(db);
+      const versionA = requirement.currentVersionId;
+
+      const second = await createRequirement(db, shSession, project.id, {
+        title: "Sessions expire",
+        description: "An idle session is signed out after 30 minutes.",
+      });
+      const versionB = second.currentVersionId;
+
+      const submit = async (versionIds: string[], commitSha: string, at: Date) => {
+        const claim = await createClaim(db, devSession, project.id, {
+          requirementVersionIds: versionIds,
+          repos: [{ projectRepoId: repo.id, commitSha }],
+        });
+        await db
+          .update(claims)
+          .set({ submittedAt: at })
+          .where(eq(claims.id, claim.claimId));
+        return claim.claimId;
+      };
+
+      /* Oldest: both requirements, one satisfied and one not. */
+      const mixed = await submit(
+        [versionA, versionB],
+        "a".repeat(40),
+        new Date("2026-01-01T00:00:00.000Z"),
+      );
+      const mixedEvaluation = crypto.randomUUID();
+      await recordEvaluation(db, mixed, {
+        evidence: {
+          evaluationId: mixedEvaluation,
+          claimId: mixed,
+          toolCallLog: [],
+          planReasoning: "Read the auth module.",
+          droppedPaths: [],
+        },
+        report: {
+          evaluationId: mixedEvaluation,
+          claimId: mixed,
+          modelId: "gemini-3.5-flash",
+          promptTemplateVersion: "v1",
+          createdAt: new Date("2026-01-01T00:05:00.000Z").toISOString(),
+          perRequirement: [
+            {
+              requirementVersionId: versionA,
+              verdict: "satisfied",
+              rationale: "See src/auth.ts, lines 15-30.",
+            },
+            {
+              requirementVersionId: versionB,
+              verdict: "not_satisfied",
+              rationale: "No expiry is enforced; see src/session.ts.",
+            },
+          ],
+        },
+      });
+
+      /* Middle: one requirement, satisfied. */
+      const single = await submit(
+        [versionB],
+        "b".repeat(40),
+        new Date("2026-01-02T00:00:00.000Z"),
+      );
+      await recordEvaluation(
+        db,
+        single,
+        artifacts(single, versionB, "satisfied", crypto.randomUUID()),
+      );
+
+      /* Newest: submitted and never evaluated. */
+      const abandoned = await submit(
+        [versionA],
+        "c".repeat(40),
+        new Date("2026-01-03T00:00:00.000Z"),
+      );
+
+      const list = await listClaims(db, shSession, project.id);
+
+      expect(list.map((c) => c.id)).toEqual([abandoned, single, mixed]);
+
+      /* Null is "no report exists", not a zero tally. Every other rendering of
+       * an abandoned submission in this product depends on the two staying
+       * distinguishable. */
+      expect(list[0].outcome).toBeNull();
+      expect(list[1].outcome).toEqual({ satisfied: 1, notSatisfied: 0 });
+      expect(list[2].outcome).toEqual({ satisfied: 1, notSatisfied: 1 });
+
+      /* The pinned count comes from the claim, never from the verdicts. The
+       * abandoned claim is the case that proves it: it pinned one requirement
+       * and produced no verdicts, so a count derived from the tally would read
+       * zero and report that the developer claimed nothing. */
+      expect(list.map((c) => c.requirementCount)).toEqual([1, 1, 2]);
+      for (const c of list) {
+        if (c.outcome === null) continue;
+        expect(c.outcome.satisfied + c.outcome.notSatisfied).toBe(
+          c.requirementCount,
+        );
+      }
+
+      expect(list[2].commits).toEqual([
+        { fullName: "octocat/Hello-World", commitSha: "a".repeat(40) },
+      ]);
+      expect(list.every((c) => c.submittedBy === "mira")).toBe(true);
+    });
   });
 });

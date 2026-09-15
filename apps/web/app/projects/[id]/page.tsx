@@ -4,18 +4,22 @@ import {
   Breadcrumb,
   Button,
   ChecklistProgress,
+  Disclosure,
+  DisclosureList,
   EmptyState,
+  ICON_SM,
+  IconChevron,
   PageHeader,
-  RequirementList,
-  RequirementRow,
   Section,
-  SectionHeading,
+  StatusBadge,
+  VersionPill,
   type RequirementDisplayStatus,
 } from "@zkcvp/design-system-ledger/components";
 import { getDb } from "../../../lib/db";
 import { requireSession } from "../../../lib/auth/session";
 import { getProject } from "../../../lib/projects/service";
 import { listRequirements } from "../../../lib/requirements/service";
+import { ProjectNav } from "./ProjectNav";
 
 /** Absolute dates throughout this product, never relative. */
 const dateFormat = new Intl.DateTimeFormat("en-GB", {
@@ -67,57 +71,47 @@ export default async function ProjectPage({
           />
         }
         lead={`Created ${dateFormat.format(project.createdAt)}`}
+        /* Actions only. Members, Repositories and Claims used to sit here as
+         * secondary buttons, which put four navigations and one mutation in one
+         * row wearing two weights of the same chrome; they are in the section
+         * strip below now, where going somewhere is what the control means. */
         actions={
-          <>
-            {/* Both roles read the member list; only a stakeholder invites. */}
-            <Link href={`/projects/${id}/members`}>
-              <Button type="button" tone="secondary">
-                Members
+          isStakeholder ? (
+            <Link href={`/projects/${id}/requirements/new`}>
+              <Button type="button" tone="primary">
+                New requirement
               </Button>
             </Link>
-            {/* Both roles read the attached repos; only a developer member
-             * attaches or removes one — the repos page itself decides that,
-             * the same way the members page decides who may invite. */}
-            <Link href={`/projects/${id}/repos`}>
-              <Button type="button" tone="secondary">
-                Repositories
-              </Button>
-            </Link>
-            {isStakeholder ? (
-              <Link href={`/projects/${id}/requirements/new`}>
-                <Button type="button" tone="primary">
-                  New requirement
-                </Button>
-              </Link>
-            ) : null}
-            {/* Only a developer member submits a claim — it spends their own
+          ) : (
+            /* Only a developer member submits a claim — it spends their own
              * GitHub token, same reasoning as the repos page's attach form.
-             * Requirement selection stays off this shared screen; the
-             * composer at claims/new is where that happens. */}
-            {!isStakeholder ? (
-              <Link href={`/projects/${id}/claims/new`}>
-                <Button type="button" tone="primary">
-                  Submit a claim
-                </Button>
-              </Link>
-            ) : null}
-          </>
+             * Requirement selection stays off this shared screen; the composer
+             * at claims/new is where that happens. */
+            <Link href={`/projects/${id}/claims/new`}>
+              <Button type="button" tone="primary">
+                Submit a claim
+              </Button>
+            </Link>
+          )
+        }
+        nav={
+          <ProjectNav
+            projectId={id}
+            active="requirements"
+            /* The checklist count rides at the end of the strip, which is where
+             * the "Requirements" section heading used to carry it. The heading
+             * itself is gone: the strip already names this section, and keeping
+             * it drew a second full-width rule a line under the first. */
+            end={
+              requirements.length > 0 ? (
+                <ChecklistProgress statuses={displayStatuses} />
+              ) : undefined
+            }
+          />
         }
       />
 
       <Section>
-        <SectionHeading
-          actions={
-            /* "0 of 0 verified" next to an empty checklist is noise, so the
-             * track only appears once there is something to count. */
-            requirements.length > 0 ? (
-              <ChecklistProgress statuses={displayStatuses} />
-            ) : undefined
-          }
-        >
-          Requirements
-        </SectionHeading>
-
         {requirements.length === 0 ? (
           <EmptyState title="No requirements yet">
             {isStakeholder
@@ -125,39 +119,49 @@ export default async function ProjectPage({
               : "You will see requirements here once a stakeholder adds them."}
           </EmptyState>
         ) : (
-          <RequirementList>
+          /* Expandable entries rather than fixed rows, the same reading the
+             requirement page gives version history. A checklist is scanned for
+             outcomes far more often than it is read for wording: at a dozen
+             requirements the descriptions were three quarters of the page and
+             the statuses they qualify were scattered down it. Collapsed, the
+             whole checklist fits one screen and every status lines up. */
+          <DisclosureList>
             {requirements.map((r) => (
-              <RequirementRow
+              <Disclosure
                 key={r.id}
-                title={r.title}
-                description={r.description}
-                /* status and archived are separate props and are never
-                 * conflated: archived_at is orthogonal to the version status,
-                 * and the row folds them for display on its own. The raw
-                 * `eval_failed` enum reaches the screen only through the
-                 * StatusBadge the row renders, which labels it "Not
-                 * satisfied". */
-                status={r.status}
-                version={r.versionNumber}
-                archived={r.archivedAt !== null}
-                actions={
-                  /* The row is an <li> and the list a <ul>, so the link lives
-                   * in the row's own actions slot — wrapping the row in an <a>
-                   * would put a non-<li> child inside the <ul>. */
-                  <Link
-                    href={`/requirements/${r.id}`}
-                    aria-label={`View ${r.title}`}
-                    /* The row is not tappable, so this link is the whole
-                       target. app.css grows it to 44px under a coarse pointer
-                       and leaves the desktop row alone. */
-                    className="app-row-action"
-                  >
-                    View
-                  </Link>
+                summary={
+                  <>
+                    <VersionPill version={r.versionNumber} current />
+                    {r.title}
+                    {/* status and archived stay separate facts. `archived_at`
+                        is orthogonal to the version's status, so an archived
+                        requirement shows both chips rather than one standing
+                        in for the other. The raw `eval_failed` enum reaches
+                        the screen only through StatusBadge, which labels it
+                        "Not satisfied". */}
+                    <StatusBadge status={r.status} />
+                    {r.archivedAt !== null ? (
+                      <StatusBadge status="archived" />
+                    ) : null}
+                  </>
                 }
-              />
+              >
+                <p className="lg-prose">{r.description}</p>
+                <span className="lg-row-flex">
+                  <Link href={`/requirements/${r.id}`}>
+                    <Button
+                      type="button"
+                      tone="secondary"
+                      size="sm"
+                      iconEnd={<IconChevron size={ICON_SM} />}
+                    >
+                      Open requirement
+                    </Button>
+                  </Link>
+                </span>
+              </Disclosure>
             ))}
-          </RequirementList>
+          </DisclosureList>
         )}
       </Section>
     </main>
