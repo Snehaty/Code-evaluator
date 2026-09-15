@@ -66,6 +66,9 @@ export {
 } from "./Card";
 export type { CardProps, PageHeaderProps } from "./Card";
 
+export { Disclosure, DisclosureList } from "./Disclosure";
+export type { DisclosureProps } from "./Disclosure";
+
 export { Table, Td, DescriptionList } from "./Table";
 export type { TableProps, CellProps, DescriptionListProps } from "./Table";
 
@@ -117,7 +120,7 @@ export type {
   EvaluationPhase,
 } from "./Feedback";
 
-export { Tabs, Breadcrumb, SideNav, SideNavSection, NavItem } from "./Nav";
+export { Tabs, NavStrip, Breadcrumb, SideNav, SideNavSection, NavItem } from "./Nav";
 export type { TabItem, Crumb } from "./Nav";
 
 export { Timeline, TimelineItem } from "./Timeline";

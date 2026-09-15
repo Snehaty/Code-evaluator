@@ -101,8 +101,31 @@
     margin-top: var(--lg-space-2);
   }
 
+  /* `__main` is `display: contents` here, so the header's children are ordered
+     explicitly and anything without an `order` sorts to 0 and leads the lot.
+     Without this the section strip rendered ABOVE the page title it belongs
+     to. */
+  .lg-page-header__nav {
+    order: 4;
+  }
+
+  /* The pinned end drops under the strip rather than competing with four tabs
+     for a 390px row. */
+  .lg-tabs-bar {
+    flex-wrap: wrap;
+  }
+
+  .lg-tabs__end {
+    margin-left: 0;
+    padding-bottom: var(--lg-space-3);
+  }
+
+  /* Scoped away from the panel size. Without the :not, a narrow viewport made
+     the panel's 21px verdict grow to 28px, so the one size chosen to sit under
+     a page title overtook it on exactly the screens with least room. */
   .lg-display,
-  .lg-verdict-statement__value {
+  .lg-verdict-statement:not(.lg-verdict-statement--panel)
+    .lg-verdict-statement__value {
     font-size: var(--lg-text-700);
     line-height: var(--lg-text-700-lh);
   }
@@ -117,6 +140,26 @@
 
   .lg-req-row__meta {
     flex-wrap: wrap;
+  }
+
+  /* A disclosure summary does the same, for the same reason: its trailing meta
+     drops under the title rather than squeezing the title into three
+     characters. The caret keeps its own column and top-aligns with the first
+     line, so the control stays where the thumb already learned it is. */
+  .lg-disclosure__summary {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: start;
+    row-gap: 2px;
+    padding-block: var(--lg-space-3);
+  }
+
+  .lg-disclosure__main {
+    flex-wrap: wrap;
+  }
+
+  .lg-disclosure__meta {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   /* The evidence lock keeps its icon beside the label but drops the action to

@@ -62,6 +62,53 @@ export function Tabs({
   );
 }
 
+/**
+ * The same strip as `Tabs`, for sections that are separate PAGES.
+ *
+ * Deliberately not `Tabs`. The ARIA tabs pattern says "these panels are all
+ * here and one of them is showing": it owns a roving tabindex, answers arrow
+ * keys, and marks its choice with `aria-selected`. Links to other URLs are none
+ * of that. They are links, they belong in the tab order one by one, and the
+ * current one is `aria-current="page"`. Reusing the tablist markup for them
+ * tells a screen reader user that Left and Right will move between panels,
+ * which is a promise this strip cannot keep.
+ *
+ * The two share their look, and only their look: `.lg-tab`'s active rule keys
+ * off `aria-selected` and `aria-current` alike.
+ *
+ * Takes children rather than an item list, because the anchor is the caller's
+ * to choose. A Next.js or router-aware app passes its own `Link` with
+ * `className="lg-tab"`; this package cannot import one and must not force a
+ * full page load on every app that uses it.
+ */
+export function NavStrip({
+  children,
+  label,
+  end,
+  className,
+}: {
+  children: ReactNode;
+  /** Names the section set, e.g. "Project sections". */
+  label: string;
+  /** Pinned to the far end of the strip: a count, a progress track, a filter. */
+  end?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cx("lg-tabs-bar", className)}>
+      {/* The strip scrolls; `end` must not be inside it. Pinned with an auto
+          margin in an overflow container, it does not pin to the visible edge
+          at all: it sits after the last item, off the right of a narrow screen,
+          reachable only by scrolling past every tab. Outside the scroller it
+          holds the edge at every width. */}
+      <nav className="lg-tabs" aria-label={label}>
+        {children}
+      </nav>
+      {end && <span className="lg-tabs__end">{end}</span>}
+    </div>
+  );
+}
+
 export interface Crumb {
   label: ReactNode;
   href?: string;

@@ -98,6 +98,17 @@ export interface PageHeaderProps {
   /** One or two sentences. Sits below the rule, at the prose measure. */
   lead?: ReactNode;
   actions?: ReactNode;
+  /**
+   * Navigation between the sections of whatever this header names: a
+   * `NavStrip`, and nothing else.
+   *
+   * It renders last and takes over the header's closing rule rather than
+   * drawing a second one under it. Two full-width rules a line and a half
+   * apart is the commonest way a page header and the strip beneath it end up
+   * looking accidental, and it is entirely avoidable: the strip already draws
+   * a rule, so the header gives up its own.
+   */
+  nav?: ReactNode;
   className?: string;
 }
 
@@ -106,16 +117,24 @@ export function PageHeader({
   above,
   lead,
   actions,
+  nav,
   className,
 }: PageHeaderProps) {
   return (
-    <header className={cx("lg-page-header", className)}>
+    <header
+      className={cx(
+        "lg-page-header",
+        nav ? "lg-page-header--nav" : undefined,
+        className,
+      )}
+    >
       {above && <div className="lg-page-header__above">{above}</div>}
       <div className="lg-page-header__main">
         <h1 className="lg-page-header__title">{title}</h1>
         {actions && <div className="lg-page-header__actions">{actions}</div>}
       </div>
       {lead && <p className="lg-page-header__lead">{lead}</p>}
+      {nav && <div className="lg-page-header__nav">{nav}</div>}
     </header>
   );
 }

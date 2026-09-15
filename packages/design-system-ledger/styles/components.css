@@ -381,6 +381,23 @@
   margin-bottom: var(--lg-space-6);
 }
 
+/* With a section strip, the strip's own rule closes the header and the header
+   gives up its border rather than drawing a second one a line and a half above
+   it. The strip takes the ink weight the header's rule had, so the page still
+   ends its title block on the same line it always did. */
+.lg-page-header--nav {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.lg-page-header__nav {
+  margin-top: var(--lg-space-3);
+}
+
+.lg-page-header__nav .lg-tabs-bar {
+  border-bottom-color: var(--lg-rule-ink);
+}
+
 .lg-page-header__above {
   min-height: var(--lg-text-100-lh);
 }
@@ -400,8 +417,12 @@
   letter-spacing: var(--lg-tracking-display);
 }
 
+/* Wraps. The number of actions on a header is decided per page and grows over
+   a product's life, so a single row that cannot wrap puts every page one button
+   away from scrolling the whole document sideways on a phone. */
 .lg-page-header__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--lg-space-2);
 }
@@ -665,6 +686,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* `.lg-table th` sets `text-align: left` at a higher specificity than the
+   modifier, so a numeric column's heading sat over the left edge of a column
+   whose figures were flush right. A header that does not sit over its own
+   values is not a header. */
+.lg-table th.lg-table__cell--num {
+  text-align: right;
+}
+
 .lg-table__cell--shrink {
   width: 1%;
   white-space: nowrap;
@@ -806,9 +835,41 @@
   text-decoration: none;
 }
 
-.lg-tab[aria-selected="true"] {
+/* `aria-current` alongside `aria-selected`: a tab strip whose sections are
+   panels marks its choice with one, a strip whose sections are pages marks it
+   with the other, and they are the same mark to look at. */
+.lg-tab[aria-selected="true"],
+.lg-tab[aria-current] {
   color: var(--lg-text);
   border-bottom-color: var(--lg-rule-ink);
+}
+
+/* The strip plus whatever is pinned beside it. The rule belongs to this row
+   rather than to the scroller inside it, so the tabs' active underline still
+   overlaps a line that runs the full width even when the tabs themselves are
+   scrolled. */
+.lg-tabs-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--lg-space-4);
+  border-bottom: 1px solid var(--lg-rule);
+}
+
+.lg-tabs-bar > .lg-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+/* Pinned to the far end, and vertically aligned to the tabs rather than to
+   their text baseline: what goes here is a count or a progress track, not
+   another label. */
+.lg-tabs__end {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-bottom: var(--lg-space-2);
 }
 
 .lg-breadcrumb {
@@ -1211,4 +1272,135 @@
   font-size: var(--lg-text-100);
   line-height: var(--lg-text-100-lh);
   color: var(--lg-text-muted);
+}
+
+/* -----------------------------------------------------------------------------
+   DISCLOSURE
+
+   A collapsible entry, and a run of them. Native `<details>`/`<summary>`: the
+   only thing this layer adds is the chrome, because the element already owns
+   the behaviour.
+
+   The summary row is a full-height hit target rather than a caret you have to
+   aim at — the whole row is the control, which is also why the caret carries no
+   hover state of its own.
+   ----------------------------------------------------------------------------- */
+.lg-disclosure-list {
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+  background: var(--lg-surface);
+}
+
+.lg-disclosure-list > .lg-disclosure {
+  border-bottom: 1px solid var(--lg-rule);
+}
+
+/* A row, so a `lead` control can sit beside the disclosure instead of inside
+   its summary. Without a lead the detail is the only child and takes the whole
+   width, which is why there is no separate one-column case to maintain. */
+.lg-disclosure {
+  display: flex;
+  align-items: flex-start;
+}
+
+.lg-disclosure__detail {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Centred on the summary's own row height, not on the whole entry: an open
+   entry is as tall as its body, and a checkbox floating halfway down a
+   paragraph has stopped pointing at the row it selects. */
+.lg-disclosure__lead {
+  display: flex;
+  align-items: center;
+  min-height: var(--lg-row);
+  padding-left: var(--lg-space-4);
+}
+
+/* The summary keeps its own left padding when it starts the row, and gives most
+   of it up when a lead has already paid for the gutter. */
+.lg-disclosure__lead + .lg-disclosure__detail .lg-disclosure__summary,
+.lg-disclosure__lead + .lg-disclosure__detail .lg-disclosure__body {
+  padding-left: var(--lg-space-3);
+}
+
+.lg-disclosure-list > .lg-disclosure:last-child {
+  border-bottom: 0;
+}
+
+.lg-disclosure__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  column-gap: var(--lg-space-3);
+  min-height: var(--lg-row);
+  padding: var(--lg-space-2) var(--lg-space-4);
+  cursor: pointer;
+  transition: background-color var(--lg-dur-1) var(--lg-ease);
+}
+
+/* Both spellings are needed: `display` on the summary box replaces the marker
+   in Firefox and Chrome, `::-webkit-details-marker` catches older Safari. */
+.lg-disclosure__summary::marker,
+.lg-disclosure__summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.lg-disclosure__summary:hover {
+  background: var(--lg-hover);
+}
+
+/* The ring is drawn inside the row rather than around it: the summary is a
+   flush-edged band inside a bordered list, and a 2px ring offset outward would
+   be clipped on the left and right by the list's own border. */
+.lg-disclosure__summary:focus-visible {
+  outline: var(--lg-focus-width) solid var(--lg-focus-color);
+  outline-offset: calc(-1 * var(--lg-focus-width));
+}
+
+.lg-disclosure__main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--lg-space-2);
+  font-size: var(--lg-text-300);
+  line-height: var(--lg-text-300-lh);
+  font-weight: var(--lg-weight-medium);
+  color: var(--lg-text);
+}
+
+.lg-disclosure__meta {
+  font-size: var(--lg-text-100);
+  line-height: var(--lg-text-100-lh);
+  color: var(--lg-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-disclosure__caret {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  color: var(--lg-text-muted);
+  transition: transform var(--lg-dur-2) var(--lg-ease);
+}
+
+.lg-disclosure__detail[open] > .lg-disclosure__summary .lg-disclosure__caret {
+  transform: rotate(90deg);
+}
+
+/* Flush with the summary's leading edge rather than indented under its text.
+   An indent would have to pick a hanging measure and then hold it against a
+   version pill, a chip and a wrapped title, none of which have a fixed width;
+   the open state is already unambiguous from the caret and the ground. The
+   bottom padding is larger than the top: the gap to the next summary row has to
+   beat the gap between this body and the row it belongs to, or an open entry
+   looks like it opened the entry below it. */
+.lg-disclosure__body {
+  padding: var(--lg-space-2) var(--lg-space-4) var(--lg-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-4);
 }

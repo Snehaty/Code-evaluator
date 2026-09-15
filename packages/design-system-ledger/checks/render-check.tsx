@@ -143,6 +143,19 @@ const checks: Array<[string, boolean]> = [
   // Identity is never coloured.
   ["role chips carry no verdict tone", !/lg-chip--role[^"]*(satisfied|danger|warning)/.test(doc)],
 
+  /* The disclosure's accessibility is entirely the element's: a hand-rolled
+     button-and-div loses the expanded announcement, the keyboard handling and
+     the browser's find-in-page expansion, and re-earns them badly. Asserting
+     the tag names is the only way to stop that substitution landing silently.
+     The second check is its corollary: `<summary>` already announces its own
+     state, so an `aria-expanded` added here would have it said twice. */
+  ["disclosure is built on native details/summary", doc.includes('<details class="lg-disclosure__detail"') && doc.includes('<summary class="lg-disclosure__summary"')],
+  /* A `lead` control must land outside the summary. Inside one the browser
+     fires both controls from a single click, so selecting an entry silently
+     expands it too, and the checkbox is announced as nested in a button. */
+  ["disclosure lead renders outside the summary", !/<summary[^>]*>[\s\S]{0,400}?lg-check__box[\s\S]*?<\/summary>/.test(doc)],
+  ["disclosure summary does not re-announce its own state", !/<summary[^>]*aria-expanded/.test(doc)],
+
   // Icons come from one family, and they render.
   ["phosphor icons render as svg", (doc.match(/<svg/g) || []).length > 40],
 
@@ -152,6 +165,12 @@ const checks: Array<[string, boolean]> = [
   // Accessibility floors that are easy to regress.
   ["every icon-only button has an accessible name", !/<button(?![^>]*aria-label)[^>]*lg-icon-btn/.test(doc)],
   ["tab strip uses the ARIA tabs pattern", doc.includes('role="tablist"') && doc.includes('aria-selected')],
+  /* And the section strip does NOT. Its items are links to other URLs: they do
+     not answer arrow keys and they are not panels, so `aria-selected` on one
+     would promise a keyboard contract the strip cannot keep. The two share a
+     look and nothing else. */
+  ["section strip marks its current page with aria-current", /<nav[^>]*class="lg-tabs"[\s\S]*?aria-current="page"/.test(doc)],
+  ["section strip is not a tablist", !/<nav[^>]*class="lg-tabs"[^>]*role="tablist"/.test(doc)],
 
   /* The evaluation checklist exists to say "no fraction" out loud rather than
      draw one. A `%` anywhere in this markup would be exactly the fabricated

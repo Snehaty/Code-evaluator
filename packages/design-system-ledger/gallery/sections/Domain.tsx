@@ -150,6 +150,15 @@ export function Domain() {
         <div className="gx-pair">
           <VerdictStatement verdict="satisfied" requirementCount={4} />
           <VerdictStatement verdict="not_satisfied" requirementCount={1} />
+          {/* The panel size, for a page that already has a headline of its own.
+              Same statement, smaller value, and a hairline tinted by the
+              verdict the way VerdictCard tints its own. */}
+          <VerdictStatement verdict="satisfied" size="panel">
+            <span className="lg-caption">12 Jul 2026, 14:08</span>
+          </VerdictStatement>
+          <VerdictStatement verdict="not_satisfied" size="panel">
+            <span className="lg-caption">04 Jul 2026, 09:20</span>
+          </VerdictStatement>
         </div>
       </Spec>
 

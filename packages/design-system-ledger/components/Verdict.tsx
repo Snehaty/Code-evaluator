@@ -65,33 +65,65 @@ export function VerdictCard({
 /**
  * The headline verdict on a stakeholder's report view.
  *
- * The largest fact on the page, which is the reason this direction carries a
- * display type size at all. A negative verdict is set in plain ink rather than
- * tinted — it does not need a hue to be emphatic, and giving it one would put it
- * next to the red that this system reserves for things that actually broke.
+ * A negative verdict is set in plain ink rather than tinted — it does not need
+ * a hue to be emphatic, and giving it one would put it next to the red that
+ * this system reserves for things that actually broke.
+ *
+ * Two sizes, because the same statement has two jobs. `display` is the report
+ * view's headline and the reason this direction carries an 800 size at all.
+ * `panel` is the same fact reported inside a page that already has a headline
+ * of its own: at display size beside another page's title the two compete, and
+ * the verdict wins an argument it was never having. Panel also takes a border,
+ * tinted by verdict exactly as `VerdictCard` tints its own, so a stakeholder
+ * scanning for the conclusion finds it by edge colour before reading a word.
+ *
+ * `children` render below the rule, for the facts that qualify the verdict:
+ * when it was evaluated, by which model, and the way through to the claim it
+ * came from.
  */
 export function VerdictStatement({
   verdict,
   requirementCount,
+  size = "display",
+  label = "Evaluator verdict",
+  children,
   className,
 }: {
   verdict: Verdict;
   /** How many requirements this verdict covers. */
   requirementCount?: number;
+  size?: "display" | "panel";
+  /**
+   * What this statement is the verdict OF. The default names who produced it,
+   * which is what a report view needs; a page showing one requirement's history
+   * needs to say WHICH of its verdicts this is instead.
+   */
+  label?: string;
+  children?: ReactNode;
   className?: string;
 }) {
   return (
-    <div className={cx("lg-verdict-statement", className)} data-verdict={verdict}>
-      <span className="lg-micro-label">Evaluator verdict</span>
-      <strong className="lg-verdict-statement__value">
-        {VERDICT_LABEL[verdict]}
-      </strong>
-      {requirementCount !== undefined && (
-        <span className="lg-caption">
-          Across {requirementCount} pinned requirement
-          {requirementCount === 1 ? "" : "s"}, read at the commits named below.
-        </span>
+    <div
+      className={cx(
+        "lg-verdict-statement",
+        size === "panel" && "lg-verdict-statement--panel",
+        className,
       )}
+      data-verdict={verdict}
+    >
+      <div className="lg-verdict-statement__head">
+        <span className="lg-micro-label">{label}</span>
+        <strong className="lg-verdict-statement__value">
+          {VERDICT_LABEL[verdict]}
+        </strong>
+        {requirementCount !== undefined && (
+          <span className="lg-caption">
+            Across {requirementCount} pinned requirement
+            {requirementCount === 1 ? "" : "s"}, read at the commits named below.
+          </span>
+        )}
+      </div>
+      {children}
     </div>
   );
 }

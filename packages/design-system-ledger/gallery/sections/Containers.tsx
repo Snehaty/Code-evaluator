@@ -9,14 +9,19 @@ import {
   CardBody,
   CardFooter,
   CardHeader,
+  ChecklistProgress,
+  Checkbox,
   CommitSha,
   DescriptionList,
+  Disclosure,
+  DisclosureList,
   HashRef,
   ICON_MD,
   IconCommit,
   IconSatisfied,
   IconSealed,
   NavItem,
+  NavStrip,
   PageHeader,
   RepoRef,
   Section,
@@ -291,6 +296,31 @@ export function Containers() {
       </Spec>
 
       <Spec
+        name="Section strip"
+        api="NavStrip · children= label= end="
+        note="The same strip as Tabs, for sections that are separate pages. Not the tabs pattern: links to other URLs do not answer arrow keys and are not panels, so they are ordinary links marked aria-current='page' rather than aria-selected. The two share their look and only their look. The end slot pins a count or a progress track to the far edge, which is where a section heading would otherwise have carried it. Dropped into PageHeader's nav slot, its rule becomes the header's closing rule rather than a second one under it."
+        layout="block"
+      >
+        <NavStrip
+          label="Project sections"
+          end={<ChecklistProgress statuses={["verified", "verified", "eval_failed", "new"]} />}
+        >
+          <a className="lg-tab" href="#" aria-current="page">
+            Requirements
+          </a>
+          <a className="lg-tab" href="#">
+            Claims
+          </a>
+          <a className="lg-tab" href="#">
+            Repositories
+          </a>
+          <a className="lg-tab" href="#">
+            Members
+          </a>
+        </NavStrip>
+      </Spec>
+
+      <Spec
         name="Side navigation"
         api="SideNav · SideNavSection · NavItem"
         note="The active state carries a left rule and a weight change as well as the accent tint, so it stays legible without relying on hue. Below 960px the whole thing becomes a horizontal scrolling strip above the content, and its section labels are dropped rather than costing a row of height for wayfinding the strip already provides."
@@ -346,6 +376,70 @@ export function Containers() {
             <HashRef hash="9f3ac1d2b47e8850cc61a0f5e2d93b74be2049aa17c6f8e3d05b91427ac6de18" />
           </TimelineItem>
         </Timeline>
+      </Spec>
+
+      <Spec
+        name="Disclosure"
+        api="Disclosure · DisclosureList"
+        note="Native details/summary, so the open state, the keyboard handling, the aria-expanded announcement and in-page find-and-expand all come from the element rather than from a hand-rolled button. Ruled like the checklist rather than stacked as separate cards: a history is one object read top to bottom, and a border per entry turns one trail into a pile. The summary must carry whatever the reader needs in order to decide whether to open it: a row that only says 'Version 2' forces them to open all of them."
+        layout="block"
+      >
+        <DisclosureList>
+          <Disclosure
+            defaultOpen
+            summary={
+              <>
+                <VersionPill version={2} current /> Rate limiting on the public API
+                <StatusBadge status="verified" />
+              </>
+            }
+            meta="12 Jul 2026, 14:08"
+          >
+            <p className="lg-prose">
+              Every public endpoint rejects a caller over 100 requests per minute
+              with a 429 and a Retry-After header.
+            </p>
+            <Timeline label="Verdicts against version 2">
+              <TimelineItem
+                marker={<IconSatisfied size={ICON_MD} />}
+                title="Satisfied"
+                at="2026-07-12T14:08:00Z"
+              />
+            </Timeline>
+          </Disclosure>
+          <Disclosure
+            summary={
+              <>
+                <VersionPill version={1} /> Rate limiting
+                <StatusBadge status="eval_failed" />
+              </>
+            }
+            meta="04 Jul 2026, 09:20"
+          >
+            <p className="lg-prose">Public endpoints should be rate limited.</p>
+          </Disclosure>
+          {/* With a `lead`: the checkbox sits beside the summary rather than
+              inside it, so selecting an entry does not also expand it. */}
+          <Disclosure
+            lead={
+              <Checkbox
+                defaultChecked
+                label={<span className="lg-sr-only">Select Audit log retains 90 days</span>}
+              />
+            }
+            summary={
+              <>
+                Audit log retains 90 days
+                <StatusBadge status="new" />
+              </>
+            }
+          >
+            <p className="lg-prose">
+              Every privileged action is written to an append-only log kept for
+              at least 90 days.
+            </p>
+          </Disclosure>
+        </DisclosureList>
       </Spec>
     </>
   );

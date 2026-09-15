@@ -307,8 +307,15 @@ pre,
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* Wide content scrolls inside this; the page body never scrolls sideways. */
+/* Wide content scrolls inside this; the page body never scrolls sideways.
+   `position: relative` is what makes the second half of that true. An
+   absolutely positioned descendant resolves against the nearest positioned
+   ancestor, not against the scroll box, so without this an `.lg-sr-only` label
+   in a wide table's header resolves against the page and drags the document's
+   scroll width out to wherever the scrolled-away column sits. The clipping
+   looks correct and the whole page scrolls sideways anyway. */
 .lg-scroll-x {
+  position: relative;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;

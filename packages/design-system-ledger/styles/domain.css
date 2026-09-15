@@ -201,8 +201,17 @@
 }
 
 /* The display-tier verdict statement, for the stakeholder's report view. The
-   largest fact on the page, which is why this direction has an 800 size at all. */
+   largest fact on the page, which is why this direction has an 800 size at all.
+
+   The ink rule under the value is the signature, and it stays in both sizes:
+   it is what separates the conclusion from the facts that qualify it. */
 .lg-verdict-statement {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lg-space-4);
+}
+
+.lg-verdict-statement__head {
   display: flex;
   flex-direction: column;
   gap: var(--lg-space-2);
@@ -215,6 +224,41 @@
   line-height: var(--lg-text-800-lh);
   font-weight: var(--lg-weight-semibold);
   letter-spacing: var(--lg-tracking-display);
+}
+
+/* The panel size: the same statement reported inside a page that already has a
+   headline. Bordered and tinted by verdict the way VerdictCard is, because here
+   the edge is doing the work the display size used to do. The tint is on the
+   hairline only, at low alpha — a filled verdict-coloured surface would read as
+   an alert, and a verdict is not an alert. */
+/* Tighter block padding than inline. A panel reporting one conclusion and two
+   terms is read in a glance, not dwelt in, and the same 16px on all four sides
+   made it the tallest thing on a page whose subject is a paragraph. */
+.lg-verdict-statement--panel {
+  background: var(--lg-surface);
+  border: 1px solid var(--lg-rule);
+  border-radius: var(--lg-radius);
+  padding: var(--lg-space-3) var(--lg-space-4);
+  gap: var(--lg-space-2);
+}
+
+.lg-verdict-statement--panel[data-verdict="satisfied"] {
+  border-color: var(--lg-satisfied-rule);
+}
+
+.lg-verdict-statement--panel[data-verdict="not_satisfied"] {
+  border-color: var(--lg-unsatisfied-rule);
+}
+
+.lg-verdict-statement--panel .lg-verdict-statement__value {
+  font-size: var(--lg-text-600);
+  line-height: var(--lg-text-600-lh);
+  letter-spacing: var(--lg-tracking-tight);
+}
+
+.lg-verdict-statement--panel .lg-verdict-statement__head {
+  gap: var(--lg-space-1);
+  padding-bottom: var(--lg-space-2);
 }
 
 .lg-verdict-statement[data-verdict="satisfied"] .lg-verdict-statement__value {
