@@ -26,5 +26,11 @@ export function middleware(req: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/projects/:path*", "/requirements/:path*"],
+  /* `/claims/:path*` belongs here for the same reason the other two do: a claim
+   * page calls requireSession() and there is no error.tsx, so without the
+   * redirect a signed-out visitor following a shared claim link got a 500
+   * instead of a sign-in prompt. Nothing leaked either way, since the throw
+   * lands before any read and getClaim enforces membership on its own, but a
+   * server error is the wrong answer to "please sign in". */
+  matcher: ["/projects/:path*", "/requirements/:path*", "/claims/:path*"],
 };
